@@ -1,0 +1,151 @@
+use actix_identity::{Identity, IdentityMiddleware};
+use actix_session::{config::PersistentSession, storage::CookieSessionStore, SessionMiddleware};
+use actix_web::{
+    get, post, HttpResponse, web::{self, Data},
+    cookie::{time::Duration, Key},
+    error,
+    http::StatusCode,
+    middleware, App, HttpMessage as _, HttpRequest, HttpServer, Responder, Result
+};
+
+use std::sync::{Arc, Mutex};
+use serde::{Serialize, Deserialize};
+
+use hellomouse_board_server::datahandler::DataHandler;
+use hellomouse_board_server::handlers::debug_handler::DebugHandler;
+
+
+macro_rules! login_fail {
+    () => {
+        return Ok(HttpResponse::Unauthorized().json(Response { message: "Unauthorized".to_string() }));
+    }
+}
+
+
+const ONE_MINUTE: Duration = Duration::minutes(1);
+
+
+
+#[derive(Serialize)]
+pub struct Response {
+    pub message: String,
+}
+
+#[get("/health")]
+async fn healthcheck(handler: Data<Mutex<DebugHandler>>) -> impl Responder {
+    let response = Response {
+        message: "Everything is working fine".to_string(),
+    };
+    HttpResponse::Ok().json(response)
+}
+
+#[derive(Deserialize)]
+struct LoginForm {
+    username: String,
+    password: String
+}
+
+#[post("/v1/login")]
+async fn login(handler: Data<Mutex<DebugHandler>>, req: HttpRequest, info: web::Form<LoginForm>) -> Result<HttpResponse> {
+    if !handler.lock().unwrap().login(info.username.as_str(), info.password.as_str()) { login_fail!() }
+
+    Identity::login(&req.extensions(), "user1".to_owned()).unwrap();
+
+    let response = Response {
+        message: "You logged in".to_string(),
+    };
+    Ok(HttpResponse::Ok().json(response))
+}
+
+#[get("/v1/logout")]
+async fn logout(handler: Data<Mutex<DebugHandler>>, id: Identity) -> Result<HttpResponse> {
+    id.logout();
+
+    let response = Response {
+        message: "You logged out".to_string(),
+    };
+    Ok(HttpResponse::Ok().json(response))
+}
+
+#[derive(Deserialize)]
+struct CreateBoardForm {
+    name: String,
+    desc: String,
+    color: String
+}
+
+#[post("/v1/board/boards")]
+async fn create_board(handler: Data<Mutex<DebugHandler>>, identity: Option<Identity>, params: web::Form<CreateBoardForm>) -> Result<HttpResponse> {
+    if let Some(identity) = identity {
+
+        // TODO: validate color
+        handler.lock().unwrap().create_board(params.name.clone(), identity.id().unwrap().as_str(), params.desc.clone(), params.color.clone(), Vec::new()); // TODO: perms
+
+        return Ok(HttpResponse::Ok().json(Response { message: "ok lol".to_string() }));
+    }
+    login_fail!(); 
+}
+
+
+
+
+
+#[get("/test")]
+async fn test(handler: Data<Mutex<DebugHandler>>, identity: Option<Identity>) -> Result<HttpResponse> {
+    let msg;
+    if let Some(identity) = identity {
+        msg = format!("Welcome {}", identity.id().unwrap());
+    }
+    else {
+        login_fail!();
+    }
+
+    let response = Response {
+        message: msg
+    };
+    Ok(HttpResponse::Ok().json(response))
+}
+
+
+async fn not_found() -> Result<HttpResponse> {
+    let response = Response {
+        message: "Resource not found".to_string(),
+    };
+    Ok(HttpResponse::NotFound().json(response))
+}
+
+
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    std::env::set_var("RUST_LOG", "debug");
+    env_logger::init();
+    
+    let secret_key = Key::generate();
+    let mut handler = DebugHandler::new();
+    handler.init();
+
+    println!("starting HTTP server at http://localhost:8080");
+
+    HttpServer::new(move || App::new()
+        .app_data(Data::new(Mutex::new(handler.clone())))
+        .service(healthcheck)
+        .service(login)
+        .service(logout)
+        .service(create_board)
+        .service(test)
+        .wrap(IdentityMiddleware::default())
+        .wrap(
+            SessionMiddleware::builder(CookieSessionStore::default(), secret_key.clone())
+                .cookie_name("login".to_owned())
+                .cookie_secure(false)
+                .session_lifecycle(PersistentSession::default().session_ttl(ONE_MINUTE))
+                .build(),
+        )
+        .wrap(middleware::NormalizePath::trim())
+        .wrap(middleware::Logger::default())
+        .default_service(web::route().to(not_found))
+    )
+        .bind(("127.0.0.1", 8080))?
+        .run()
+        .await
+}

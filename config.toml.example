@@ -1,0 +1,9 @@
+[database]
+ip = "127.0.0.1"
+port = 5432
+user = "hellomouse_board"
+password = "my_password"  # Optional
+name = "hellomouse_board" # db name
+
+[server]
+port = 8080
