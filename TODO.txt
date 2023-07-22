@@ -1,12 +1,6 @@
 - gitignore, readme, etc...
 
 
-instead of Account reference just have account uuid or something
-
-
-- load config
-    - port
-
 database stuff
 
 
@@ -16,25 +10,25 @@ https://datatracker.ietf.org/doc/html/rfc7617
 https://www.lpalmieri.com/posts/password-authentication-in-rust/
 https://libpasta.github.io/introduction/basic-usage/
 
-account, board, pin -> toJSON implemented
 
-
-user hashes password -> send to server (avoid DOS attacks)
-server only accepts password of certain length
-
-do not have timing attacks on login - dont reject invalid usrnames instantly
 - limit login attempts / ip / username
 
 limit board counts
-
 
 
 https://github.com/actix/actix-extras/tree/master/actix-limitation
 https://crates.io/crates/actix-multipart-extract
 
 
-validate json - dont allow extranerous keys
-
 limit size of metadata and settings jsons
 
+
+users:
+errors:
+functions to get error:
+message: "new row for relation \"users\" violates check constraint \"users_id_check\"
+- too long
+
+user already exists:
+duplicate key value violates unique constraint
 

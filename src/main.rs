@@ -12,5 +12,11 @@ async fn main() -> Result<(), sqlx::Error> {
     println!("Can login: {}", valid);
     let valid = a.can_login("bowserinator", "1234566").await?;
     println!("Can login: {}", valid);
+
+    a.change_account_settings("bowserinator", serde_json::from_str("{\"age2\": 12345, \"key2\": 2}").unwrap()).await?;
+
+    println!("{}", a.get_user("bowserinator").await?.settings);
+
+    // a.delete_account("bowserinator").await?;
     Ok(())
 }
