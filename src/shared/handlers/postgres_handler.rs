@@ -12,18 +12,7 @@ pub struct PostgresHandler {
 
 impl PostgresHandler {
     pub async fn new() -> Result<PostgresHandler, sqlx::Error> {
-        let config = config::get_config();
-        let pool = PgPoolOptions::new()
-            .max_connections(5)
-            .connect(format!("postgres://{}:{}@{}:{}/{}", // user:password / ip/db
-                config.database.user,
-                config.database.password,
-                config.database.ip,
-                config.database.port,
-                config.database.name
-            ).as_str())
-            .await?;
-        Ok(PostgresHandler { pool })
+        Ok(PostgresHandler { pool: config::get_pool().await })
     }
 }
 

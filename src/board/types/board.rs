@@ -1,5 +1,6 @@
 use crate::shared::types::account;
 
+use chrono::Utc;
 use uuid::Uuid;
 use serde::{Serialize, Deserialize};
 
@@ -10,7 +11,7 @@ pub struct Board {
     pub desc: String,
     pub creator: String,
     pub color: String,
-    pub created: std::time::SystemTime,
-    pub edited: std::time::SystemTime,
+    pub created: chrono::DateTime<Utc>,
+    pub edited: chrono::DateTime<Utc>,
     pub perms: Vec<account::Perm>
 }

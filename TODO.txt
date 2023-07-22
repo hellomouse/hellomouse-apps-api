@@ -1,7 +1,8 @@
 - gitignore, readme, etc...
 
 
-database stuff
+note: json merge will keep old keys, maybe just overwrite and keep defaults?
+
 
 
 validate data like color and shit in API
@@ -15,6 +16,7 @@ https://libpasta.github.io/introduction/basic-usage/
 
 limit board counts
 
+cors
 
 https://github.com/actix/actix-extras/tree/master/actix-limitation
 https://crates.io/crates/actix-multipart-extract
@@ -22,6 +24,8 @@ https://crates.io/crates/actix-multipart-extract
 
 limit size of metadata and settings jsons
 
+general file upload handler?
+- pass handler of handlers
 
 users:
 errors:

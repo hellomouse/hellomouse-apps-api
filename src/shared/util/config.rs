@@ -5,6 +5,7 @@ use cached::proc_macro::cached;
 use std::fs;
 use std::process::exit;
 use toml;
+use sqlx::postgres::{PgPoolOptions, PgPool};
 
 #[derive(Deserialize, Clone)]
 pub struct Config {
@@ -24,6 +25,22 @@ pub struct DatabaseConfig {
 #[derive(Deserialize, Clone)]
 pub struct ServerConfig {
     pub port: u16
+}
+
+#[cached]
+pub async fn get_pool() -> PgPool {
+    let config = get_config();
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(format!("postgres://{}:{}@{}:{}/{}", // user:password / ip/db
+            config.database.user,
+            config.database.password,
+            config.database.ip,
+            config.database.port,
+            config.database.name
+        ).as_str())
+        .await;
+    pool.unwrap()
 }
 
 #[cached]

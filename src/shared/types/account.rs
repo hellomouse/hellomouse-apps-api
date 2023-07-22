@@ -13,6 +13,8 @@ pub type UserId = str;
 /// - **edit:** Create, and edit/delete anyone's sub-resources
 /// - **owner:** Owner of the resource, can delete / edit main resource
 #[derive(Clone, Serialize, Deserialize)]
+#[derive(sqlx::Type)]
+#[repr(i32)]
 pub enum PermLevel {
     View = 0,
     Interact = 1,
@@ -31,6 +33,6 @@ pub struct Account {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Perm {
-    user: Account,
-    perm_level: PermLevel
+    pub user_id: String,
+    pub perm_level: PermLevel
 }
