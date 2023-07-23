@@ -23,7 +23,7 @@ https://crates.io/crates/actix-multipart-extract
 limit size of metadata and settings jsons
 
 general file upload handler?
-- pass handler of handlers
+
 
 users:
 errors:

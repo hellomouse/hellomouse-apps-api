@@ -2,10 +2,19 @@ use crate::shared::util::config;
 use crate::shared::types::account::{Account, UserId};
 
 use serde_json::Value;
+use serde::Serialize;
 use json_value_merge::Merge;
 use sqlx::Row;
-use sqlx::postgres::{PgPoolOptions, PgPool};
+use sqlx::postgres::{PgRow, PgPool};
 
+#[derive(Clone, Serialize)]
+pub struct UserSearchResult {
+    name: String,
+    id: String,
+    pfp_url: String
+}
+
+#[derive(Clone)]
 pub struct PostgresHandler {
     pool: PgPool
 }
@@ -63,6 +72,18 @@ impl PostgresHandler {
     }
 
     // TODO: update pfp pic
+
+    pub async fn search_users(&self, filter: &str) -> Result<Vec<UserSearchResult>, sqlx::Error> {
+        Ok(sqlx::query("SELECT * FROM users WHERE (id ILIKE $1 || '%') or 
+            (name ILIKE '%' || $1 || '%') LIMIT 20;")
+                .bind(filter)
+                .map(|row: PgRow| UserSearchResult {
+                    name: row.get::<String, &str>("name"),
+                    id: row.get::<String, &str>("id"),
+                    pfp_url: row.get::<Option<String>, &str>("pfp_url").unwrap_or("".to_string())
+                })
+                .fetch_all(&self.pool).await?)
+    }
 
     pub async fn delete_account(&mut self, user: &UserId) -> Result<(), sqlx::Error> {
         sqlx::query("DELETE FROM users WHERE id = $1;")

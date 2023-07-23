@@ -20,6 +20,7 @@ macro_rules! update_if_not_none {
     };
 }
 
+#[derive(Clone)]
 pub struct PostgresHandler {
     pool: PgPool
 }
