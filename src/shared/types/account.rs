@@ -15,6 +15,7 @@ pub type UserId = str;
 #[derive(Clone, Serialize, Deserialize)]
 #[derive(sqlx::Type)]
 #[repr(i32)]
+#[derive(PartialEq)]
 pub enum PermLevel {
     View = 0,
     Interact = 1,
@@ -32,6 +33,7 @@ pub struct Account {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
+#[derive(PartialEq)]
 pub struct Perm {
     pub user_id: String,
     pub perm_level: PermLevel

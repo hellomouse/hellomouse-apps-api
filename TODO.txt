@@ -4,9 +4,6 @@
 note: json merge will keep old keys, maybe just overwrite and keep defaults?
 
 
-
-validate data like color and shit in API
-
 https://datatracker.ietf.org/doc/html/rfc7617
 https://www.lpalmieri.com/posts/password-authentication-in-rust/
 https://libpasta.github.io/introduction/basic-usage/
@@ -15,6 +12,7 @@ https://libpasta.github.io/introduction/basic-usage/
 - limit login attempts / ip / username
 
 limit board counts
+limit shared per user
 
 cors
 

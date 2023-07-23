@@ -13,6 +13,10 @@ async fn main() -> Result<(), sqlx::Error> {
         Ok(acc) => acc,
         Err(error) => println!("Account alread yexists")
     }
+    match a.create_account("bwbellairs", "BWBellairs", "12345").await {
+        Ok(acc) => acc,
+        Err(error) => println!("Account alread yexists")
+    }
     // let valid = a.can_login("bowserinator", "12345").await?;
     // println!("Can login: {}", valid);
     // let valid = a.can_login("bowserinator", "1234566").await?;
@@ -23,16 +27,38 @@ async fn main() -> Result<(), sqlx::Error> {
     println!("{}", a.get_user("bowserinator").await?.settings);
 
     let mut perms = Vec::new();
-    perms.push(Perm {
-        user_id: "bowserinator".to_string(),
-        perm_level: PermLevel::Owner
-    });
 
-    let r = b.create_board("My board".to_string(),
+    let r1 = b.create_board("My board".to_string(),
         "bowserinator",
         "a description".to_string(),
         "#FF0000".to_string(), perms).await?;
-    println!("{}", r.perms[0].user_id);
+
+    b.create_board("BW board".to_string(),
+        "bwbellairs",
+        "a description 2".to_string(),
+        "#FF0000".to_string(), Vec::new()).await?;
+
+    let mut perms2 = Vec::new();
+    perms2.push(Perm {
+        user_id: "bowserinator".to_string(),
+        perm_level: PermLevel::Edit
+    });
+    perms2.push(Perm {
+        user_id: "bwbellairs".to_string(),
+        perm_level: PermLevel::Owner
+    });
+
+
+    let r = b.modify_board(&r1.id, Some("My board updated".to_string()), None, Some("#FFFFA0".to_string()), Some(perms2)).await?;
+    println!("{} {}", r.name, r.perms[0].user_id);
+
+
+    let r3 = b.get_boards("bowserinator", None, None, None, &None, &None).await?;
+    for r4 in r3.iter() {
+        println!("{} - found", r4.name);
+    }
+
+    b.delete_board(&r.id).await?;
 
     // a.delete_account("bowserinator").await?;
     Ok(())
