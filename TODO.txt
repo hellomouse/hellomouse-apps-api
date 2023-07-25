@@ -1,4 +1,4 @@
-- gitignore, readme, etc...
+- readme, etc...
 
 
 note: json merge will keep old keys, maybe just overwrite and keep defaults?
@@ -19,8 +19,9 @@ https://crates.io/crates/actix-multipart-extract
 
 limit size of metadata and settings jsons
 
+config:
 limit board counts
-limit shared per user
+
 
 debug setting in config.toml for logging
 
@@ -34,7 +35,8 @@ write list of tests for pins for 2 people
 
 tests:
 env variables, ...
-python3 -m unittest discover
+
+better test config: api base path
 
 
 
