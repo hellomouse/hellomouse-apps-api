@@ -1,9 +1,11 @@
 use uuid::Uuid;
-use bitflags::bitflags;
 use serde_json::Value;
 use serde::{Serialize, Deserialize};
+use chrono::Utc;
+use num_derive::FromPrimitive;
 
 #[derive(Clone, Serialize, Deserialize)]
+#[derive(FromPrimitive)]
 pub enum PinType {
     Markdown = 0,
     ImageGallery = 1,
@@ -11,6 +13,8 @@ pub enum PinType {
     Review = 3
 }
 
+// IMPORTANT: Even though it's implemented as a u64
+// Do not use more than 32 flags
 bitflags::bitflags! {
     #[derive(Serialize, Deserialize, Clone)]
     #[serde(transparent)]
@@ -31,8 +35,8 @@ pub struct Pin {
     pub pin_type: PinType,
     pub content: String,
     pub creator: String,
-    pub created: std::time::SystemTime,
-    pub edited: std::time::SystemTime,
+    pub created: chrono::DateTime<Utc>,
+    pub edited: chrono::DateTime<Utc>,
     pub flags: PinFlags,
     pub attachment_paths: Vec<String>,
     pub metadata: Value

@@ -1,4 +1,4 @@
-use actix_identity::{Identity, IdentityMiddleware};
+use actix_identity::IdentityMiddleware;
 use actix_session::{config::PersistentSession, storage::CookieSessionStore, SessionMiddleware};
 use actix_web::{
     get, post, HttpResponse, web::{self, Data},
@@ -8,8 +8,7 @@ use actix_web::{
     middleware, App, HttpMessage as _, HttpRequest, HttpServer, Responder, Result
 };
 
-use std::sync::{Arc, Mutex};
-use serde::{Serialize, Deserialize};
+use std::sync::Mutex;
 
 use crate::shared::util::config;
 
@@ -17,6 +16,7 @@ use crate::shared::handlers::postgres_handler::PostgresHandler as SharedPostgres
 use crate::board::handlers::postgres_handler::PostgresHandler as BoardPostgresHandler;
 
 use crate::shared::app as shared_app;
+use crate::board::app as board_app;
 
 use crate::shared::types::app as app_types;
 
@@ -37,7 +37,21 @@ fn routes(app: &mut web::ServiceConfig) {
         .service(shared_app::user_settings)
         .service(shared_app::users)
         .service(shared_app::users_search)
-        .service(shared_app::get_user_settings);
+        .service(shared_app::get_user_settings)
+        
+        // Board
+        .service(board_app::create_board)
+        .service(board_app::update_board)
+        .service(board_app::delete_board)
+        .service(board_app::get_boards)
+        .service(board_app::get_board)
+        
+        // Pins
+        .service(board_app::create_pin)
+        .service(board_app::modify_pin)
+        .service(board_app::delete_pin)
+        .service(board_app::get_pins)
+        .service(board_app::get_pin);
 }
 
 pub async fn start() -> std::io::Result<()> {

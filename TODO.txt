@@ -11,9 +11,6 @@ https://libpasta.github.io/introduction/basic-usage/
 
 - limit login attempts / ip / username
 
-limit board counts
-limit shared per user
-
 cors
 
 https://github.com/actix/actix-extras/tree/master/actix-limitation
@@ -24,13 +21,31 @@ limit size of metadata and settings jsons
 
 general file upload handler?
 
+// TODO: update pfp pic
 
-users:
-errors:
-functions to get error:
-message: "new row for relation \"users\" violates check constraint \"users_id_check\"
-- too long
 
-user already exists:
-duplicate key value violates unique constraint
+limit board counts
+limit shared per user
 
+debug setting in config.toml for logging
+
+
+
+Name + desc should be stripped of HTML + length limited
+
+abstract board -> methods:
+    -> canEditBoard
+    -> canEditPin
+    -> canView
+    -> canDeletePin
+
+add ability to favorite boards / pins
+
+
+write list of tests for pins for 2 people
+
+better sorting for search results
+
+tests:
+env variables, ...
+python3 -m unittest discover

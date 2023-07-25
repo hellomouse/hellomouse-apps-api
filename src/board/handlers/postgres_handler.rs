@@ -6,8 +6,11 @@ use crate::shared::util::config;
 use chrono;
 use chrono::Utc;
 use uuid::Uuid;
+use std::collections::HashMap;
+use std::cmp;
 use serde_json::Value;
-use json_value_merge::Merge;
+
+use num;
 
 use sqlx::Row;
 use sqlx::postgres::{PgPool, PgRow};
@@ -47,22 +50,36 @@ impl PostgresHandler {
         );"#).execute(&self.pool).await?;
 
         sqlx::query(r#"CREATE TABLE IF NOT EXISTS board.board_perms (
-            table_id uuid NOT NULL REFERENCES board.boards(id),
+            board_id uuid NOT NULL REFERENCES board.boards(id),
             perm_id integer,
             user_id text NOT NULL REFERENCES users(id),
-            UNIQUE(table_id, user_id)
+            UNIQUE(board_id, user_id)
         );"#).execute(&self.pool).await?;
+
+        sqlx::query(r#"CREATE TABLE IF NOT EXISTS board.pins (
+            id uuid primary key unique,
+            board_id uuid NOT NULL REFERENCES board.boards(id),
+            pin_type integer NOT NULL,
+            content text NOT NULL,
+            creator_id text NOT NULL REFERENCES users(id),
+            created timestamptz NOT NULL,
+            edited timestamptz NOT NULL,
+            flags integer NOT NULL,
+            attachment_paths text[],
+            metadata json
+        );"#).execute(&self.pool).await?;
+
         Ok(())
     }
 
     pub async fn get_board(&self, board_id: &Uuid) -> Option<board::Board> {
-        let perms: Vec<Perm> = sqlx::query("SELECT * FROM board.board_perms WHERE table_id = $1")
+        let perms: HashMap<String, Perm> = sqlx::query("SELECT * FROM board.board_perms WHERE board_id = $1")
             .bind(board_id)
-            .map(|row: PgRow| Perm {
-                user_id: row.get("user_id"),
-                perm_level: row.get("perm_id"),
-            })
-            .fetch_all(&self.pool).await.unwrap_or(Vec::new());
+            .map(|row: PgRow| (
+                row.get("user_id"),
+                Perm { perm_level: row.get("perm_id") }
+            ))
+            .fetch_all(&self.pool).await.unwrap_or(Vec::new()).into_iter().collect();
 
         match sqlx::query("SELECT * FROM board.boards WHERE id = $1;")
                 .bind(board_id).fetch_one(&self.pool).await {
@@ -80,7 +97,7 @@ impl PostgresHandler {
         }
     }
 
-    pub async fn create_board(&mut self, name: String, creator_id: &str, desc: String, color: String, perms: Vec<Perm>)
+    pub async fn create_board(&mut self, name: String, creator_id: &str, desc: String, color: String, perms: HashMap<String, Perm>)
             -> Result<board::Board, sqlx::Error> {
         let mut id: Uuid;
         loop {
@@ -97,18 +114,16 @@ impl PostgresHandler {
             .bind(id).bind(name).bind(desc).bind(creator_id).bind(color).bind(created).bind(edited)
             .execute(&mut *tx).await?;
 
-        let itr = perms.iter();
-
         // Creator gets owner permission by default
-        sqlx::query(r#"INSERT INTO board.board_perms(table_id, user_id, perm_id) VALUES($1, $2, $3);"#)
+        sqlx::query(r#"INSERT INTO board.board_perms(board_id, user_id, perm_id) VALUES($1, $2, $3);"#)
             .bind(id).bind(creator_id.clone()).bind(PermLevel::Owner)
             .execute(&mut *tx).await?;
 
-        for val in itr {
-            if val.user_id == creator_id { continue; }
+        for (perm_user_id, val) in perms {
+            if perm_user_id == creator_id { continue; }
 
-            let result = sqlx::query(r#"INSERT INTO board.board_perms(table_id, user_id, perm_id) VALUES($1, $2, $3);"#)
-                .bind(id).bind(val.user_id.clone()).bind(val.perm_level.clone())
+            let result = sqlx::query(r#"INSERT INTO board.board_perms(board_id, user_id, perm_id) VALUES($1, $2, $3);"#)
+                .bind(id).bind(perm_user_id.clone()).bind(val.perm_level.clone())
                 .execute(&mut *tx).await;
 
             // Rollback on error
@@ -116,14 +131,14 @@ impl PostgresHandler {
                 tx.rollback().await?;
                 return Err(result.unwrap_err());
             }
-        }
+        };
         tx.commit().await?;
 
         return Ok(self.get_board(&id).await.unwrap());
     }
 
     pub async fn modify_board(&mut self, board_id: &Uuid, name: Option<String>, desc: Option<String>,
-        color: Option<String>, perms: Option<Vec<Perm>>)
+        color: Option<String>, perms: Option<HashMap<String, Perm>>)
             -> Result<board::Board, sqlx::Error> {
         let mut b = self.get_board(&board_id).await.unwrap();
         b.edited = chrono::offset::Utc::now();
@@ -138,28 +153,32 @@ impl PostgresHandler {
             .execute(&mut *tx).await?;
 
         if perms.is_some() && perms.as_ref().unwrap() != &b.perms {
-            let mut perms = perms.unwrap();
-            let itr = perms.iter_mut();
+            let perms = perms.unwrap();
 
             // Delete all existing perms, then insert new perms
-            sqlx::query(r#"DELETE FROM board.board_perms WHERE table_id = $1;"#)
+            sqlx::query(r#"DELETE FROM board.board_perms WHERE board_id = $1;"#)
                 .bind(board_id).execute(&mut *tx).await?;
 
-            for val in itr {
-                // Ignore board creator: Always owner permission
-                if val.user_id == b.creator {
-                    val.perm_level = PermLevel::Owner;
+            // Creator gets owner permission by default
+            sqlx::query(r#"INSERT INTO board.board_perms(board_id, user_id, perm_id) VALUES($1, $2, $3);"#)
+                .bind(board_id).bind(b.creator.clone()).bind(PermLevel::Owner)
+                .execute(&mut *tx).await?;
+
+            for (perm_user_id, val) in perms {
+                // Ignore board creator: Always owner permission as defined above
+                if perm_user_id == b.creator {
+                    continue;
                 }
 
                 // Ignore users that don't exist
                 if sqlx::query(r#"SELECT * FROM users where id = $1;"#)
-                        .bind(val.user_id.clone()).fetch_one(&self.pool).await
+                        .bind(perm_user_id.clone()).fetch_one(&self.pool).await
                         .is_err() {
                     continue;
                 }
 
-                let result = sqlx::query(r#"INSERT INTO board.board_perms(table_id, user_id, perm_id) VALUES($1, $2, $3);"#)
-                    .bind(board_id).bind(val.user_id.clone()).bind(val.perm_level.clone())
+                let result = sqlx::query(r#"INSERT INTO board.board_perms(board_id, user_id, perm_id) VALUES($1, $2, $3);"#)
+                    .bind(board_id).bind(perm_user_id.clone()).bind(val.perm_level.clone())
                     .execute(&mut *tx).await;
                 if result.is_err() {
                     tx.rollback().await?;
@@ -175,7 +194,9 @@ impl PostgresHandler {
     }
 
     pub async fn delete_board(&mut self, board_id: &Uuid) -> Result<(), sqlx::Error> {
-        sqlx::query(r#"DELETE FROM board.board_perms WHERE table_id = $1;"#)
+        sqlx::query(r#"DELETE FROM board.pins WHERE board_id = $1;"#)
+            .bind(board_id).execute(&self.pool).await?;
+        sqlx::query(r#"DELETE FROM board.board_perms WHERE board_id = $1;"#)
             .bind(board_id).execute(&self.pool).await?;
         sqlx::query("DELETE FROM board.boards WHERE id = $1;")
             .bind(board_id).execute(&self.pool).await?;
@@ -197,10 +218,10 @@ impl PostgresHandler {
             owner_search_id = None;
         }
 
-        // Only returned tables user can access
+        // Only return tables user can access
         Ok(sqlx::query("SELECT * FROM board.boards
             INNER JOIN board.board_perms ON
-                user_id = $4 and table_id = id and
+                user_id = $4 and board_id = id and
                 ($1 is null or name ILIKE '%' || $1 || '%' or description ILIKE '%' || $1 || '%') and
                 ($2 is null or creator_id = $2) and
                 ($3 is null or creator_id != $3)
@@ -210,7 +231,7 @@ impl PostgresHandler {
                 .bind(owner_disallow_id)
                 .bind(user)
                 .bind(offset.unwrap_or(0) as i32)
-                .bind(limit.unwrap_or(20) as i32)
+                .bind(cmp::min(100, limit.unwrap_or(20) as i32))
                 .map(|row: PgRow| board::Board {
                     name: row.get::<String, &str>("name"),
                     id: row.get::<Uuid, &str>("id"),
@@ -219,23 +240,114 @@ impl PostgresHandler {
                     color: row.get::<String, &str>("color"),
                     created: row.get::<chrono::DateTime<Utc>, &str>("created"),
                     edited: row.get::<chrono::DateTime<Utc>, &str>("edited"),
-                    perms: Vec::new()
+                    perms: HashMap::new()
                 })
                 .fetch_all(&self.pool).await?)
     }
 
-    // fn create_pin(&mut self, creator: &UserId, pin_type: pin::PinType, board_id: &Uuid, content: String,
-    //     attachment_paths: Vec<String>, flags: u32, metadata: Value)
-    //     -> Result<&pin::Pin, &'static str>;
-    // fn modify_pin(&mut self, pin_id: &Uuid, pin_type: Option<pin::PinType>, board_id: &Option<Uuid>,
-    //     content: Option<String>, attachment_paths: Option<Vec<String>>, flags: Option<u32>, metadata: Option<Value>)
-    //     -> Result<&pin::Pin, &'static str>;
-    // fn delete_pin(&mut self, pin_id: Uuid) -> Result<(), &'static str>;
 
-    // fn get_pins(&self, offset: Option<u32>, limit: Option<u32>, search_query: &Option<String>)
-    //     -> Result<Vec<&pin::Pin>, &'static str>;
 
-    // TODO: get individual pin
+    // --------------- Pins ----------------------
+    pub async fn get_pin(&self, pin_id: &Uuid) -> Option<pin::Pin> {
+        match sqlx::query("SELECT * FROM board.pins WHERE id = $1;")
+                .bind(pin_id).fetch_one(&self.pool).await {
+            Ok(p) => Some(pin::Pin {
+                pin_id: *pin_id,
+                board_id: p.get::<Uuid, &str>("board_id"),
+                pin_type: num::FromPrimitive::from_u32(p.get::<i32, &str>("pin_type") as u32).unwrap(),
+                content: p.get::<String, &str>("content"),
+                creator: p.get::<String, &str>("creator_id"),
+                created: p.get::<chrono::DateTime<Utc>, &str>("created"),
+                edited: p.get::<chrono::DateTime<Utc>, &str>("edited"),
+                flags: pin::PinFlags::from_bits_truncate(p.get::<i32, &str>("flags") as u64),
+                attachment_paths: p.get::<Option<Vec<String>>, &str>("attachment_paths").unwrap_or(Vec::new()),
+                metadata: p.get::<Option<Value>, &str>("metadata").unwrap_or(serde_json::from_str("{}").ok()?)
+            }),
+            Err(_err) => None
+        }
+    }
 
-    // TODO: get pin search globally
+    pub async fn create_pin(&mut self, creator: &UserId, pin_type: pin::PinType, board_id: &Uuid, content: String,
+            attachment_paths: Vec<String>, flags: pin::PinFlags, metadata: Value)
+            -> Result<pin::Pin, sqlx::Error> {
+        let mut id: Uuid;
+        loop {
+            id = Uuid::new_v4();
+            if self.get_pin(&id).await.is_none() { break; }
+        }
+
+        let created = chrono::offset::Utc::now();
+        let edited = created.clone();
+        let mut tx = self.pool.begin().await?;
+
+        sqlx::query(r#"INSERT INTO board.pins(id, board_id, pin_type, content, creator_id, created, edited, flags, attachment_paths, metadata)
+            VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);"#)
+            .bind(id).bind(board_id).bind(pin_type as i16).bind(content).bind(creator)
+            .bind(created).bind(edited).bind(flags.bits() as i32).bind(attachment_paths).bind(metadata)
+            .execute(&mut *tx).await?;
+        tx.commit().await?;
+
+        return Ok(self.get_pin(&id).await.unwrap());
+    }
+
+    pub async fn modify_pin(&mut self, pin_id: &Uuid, pin_type: Option<pin::PinType>, board_id: &Option<Uuid>,
+            content: Option<String>, attachment_paths: Option<Vec<String>>, flags: Option<pin::PinFlags>, metadata: Option<Value>)
+            -> Result<pin::Pin, sqlx::Error> {
+        let mut p = self.get_pin(&pin_id).await.unwrap();
+        p.edited = chrono::offset::Utc::now();
+
+        update_if_not_none!(p, pin_type);
+        update_if_not_none!(p, board_id);
+        update_if_not_none!(p, content);
+        update_if_not_none!(p, attachment_paths);
+        update_if_not_none!(p, flags);
+        update_if_not_none!(p, metadata);
+
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("UPDATE board.pins SET pin_type = $2, content = $3, edited = $4, flags = $5, attachment_paths = $6, metadata = $7 WHERE id = $1;")
+            .bind(pin_id).bind(p.pin_type as i16).bind(p.content).bind(p.edited)
+            .bind(p.flags.bits() as i32).bind(p.attachment_paths).bind(p.metadata)
+            .execute(&mut *tx).await?;
+
+        tx.commit().await?;
+        return Ok(self.get_pin(&pin_id).await.unwrap());
+    }
+
+    pub async fn delete_pin(&mut self, pin_id: &Uuid) -> Result<(), sqlx::Error> {
+        sqlx::query("DELETE FROM board.pins WHERE id = $1;")
+            .bind(pin_id).execute(&self.pool).await?;
+        Ok(())
+    }
+
+    pub async fn get_pins(&self, user: &UserId, board_id: &Option<Uuid>, offset: Option<u32>, limit: Option<u32>,
+            creator: &Option<String>, search_query: &Option<String>)
+                -> Result<Vec<pin::Pin>, sqlx::Error> {
+        // Only return pins the user can view
+        Ok(sqlx::query("SELECT p2.*, p1.user_id, p1.board_id FROM board.pins p2
+            INNER JOIN board.board_perms p1 ON
+                p1.user_id = $4 and p1.board_id = p2.board_id and
+                ($1 is null or p1.board_id = $1) and
+                ($2 is null or p2.content ILIKE '%' || $2 || '%') and
+                ($3 is null or p2.creator_id = $3)
+            ORDER BY created OFFSET $5 LIMIT $6;")
+                .bind(board_id)
+                .bind(search_query)
+                .bind(creator)
+                .bind(user)
+                .bind(offset.unwrap_or(0) as i32)
+                .bind(cmp::min(100, limit.unwrap_or(20) as i32))
+                .map(|row: PgRow| pin::Pin {
+                    board_id: row.get::<Uuid, &str>("board_id"),
+                    pin_id: row.get::<Uuid, &str>("id"),
+                    pin_type: num::FromPrimitive::from_u32(row.get::<i32, &str>("pin_type") as u32).unwrap(),
+                    content: row.get::<String, &str>("content"),
+                    creator: row.get::<String, &str>("creator_id"),
+                    created: row.get::<chrono::DateTime<Utc>, &str>("created"),
+                    edited: row.get::<chrono::DateTime<Utc>, &str>("edited"),
+                    flags: pin::PinFlags::from_bits_truncate(row.get::<i32, &str>("flags") as u64),
+                    attachment_paths: row.get::<Option<Vec<String>>, &str>("attachment_paths").unwrap_or(Vec::new()),
+                    metadata: row.get::<Option<Value>, &str>("metadata").unwrap_or(serde_json::from_str("{}").unwrap())
+                })
+                .fetch_all(&self.pool).await?)
+    }
 }

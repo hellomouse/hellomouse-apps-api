@@ -35,12 +35,19 @@ impl PostgresHandler {
             pfp_url text CHECK(length(pfp_url) < 2048),
             settings json CHECK(pg_column_size(settings) < 1048576),
             password_hash text NOT NULL
-        );"#,
-            ).execute(&self.pool).await?;
+        );"#).execute(&self.pool).await?;
+
+        // Create a dummy public user
+        match self.create_account("Public", "public", "this_password_doesnt_matter").await {
+            Ok(_) => (),
+            Err(_) => ()
+        };
         Ok(())
     }
 
     pub async fn can_login(&self, user: &str, password: &str) -> Result<bool, sqlx::Error> {
+        if user == "public" { return Ok(false); } // Cannot log into public user
+
         let p = match sqlx::query("SELECT * FROM users WHERE id = $1;")
             .bind(user).fetch_one(&self.pool).await {
             Ok(user) => user.get::<String, &str>("password_hash"),
@@ -71,11 +78,9 @@ impl PostgresHandler {
         Ok(())
     }
 
-    // TODO: update pfp pic
-
     pub async fn search_users(&self, filter: &str) -> Result<Vec<UserSearchResult>, sqlx::Error> {
-        Ok(sqlx::query("SELECT * FROM users WHERE (id ILIKE $1 || '%') or 
-            (name ILIKE '%' || $1 || '%') LIMIT 20;")
+        Ok(sqlx::query("SELECT * FROM users WHERE ((id ILIKE $1 || '%') or 
+            (name ILIKE '%' || $1 || '%')) LIMIT 20;")
                 .bind(filter)
                 .map(|row: PgRow| UserSearchResult {
                     name: row.get::<String, &str>("name"),

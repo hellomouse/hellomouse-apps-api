@@ -35,6 +35,5 @@ pub struct Account {
 #[derive(Clone, Serialize, Deserialize)]
 #[derive(PartialEq)]
 pub struct Perm {
-    pub user_id: String,
     pub perm_level: PermLevel
 }

@@ -35,7 +35,7 @@ async fn logout(id: Identity) -> Result<HttpResponse> {
 struct UserSettingsForm { settings: Value }
 
 #[put("/v1/user_settings")]
-async fn user_settings(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identity>, params: web::Form<UserSettingsForm>)
+async fn user_settings(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identity>, params: web::Json<UserSettingsForm>)
         -> Result<HttpResponse> {
     if let Some(identity) = identity {
         return match handler.lock().unwrap()
