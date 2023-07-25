@@ -7,6 +7,9 @@ use actix_web::{
     http::StatusCode,
     middleware, App, HttpMessage as _, HttpRequest, HttpServer, Responder, Result
 };
+use actix_extensible_rate_limit::{RateLimiter};
+use actix_extensible_rate_limit::backend::{SimpleInputFunctionBuilder, memory::InMemoryBackend};
+use std::time;
 
 use std::sync::Mutex;
 
@@ -19,9 +22,6 @@ use crate::shared::app as shared_app;
 use crate::board::app as board_app;
 
 use crate::shared::types::app as app_types;
-
-
-const ONE_MINUTE: Duration = Duration::minutes(320);
 
 
 async fn not_found() -> Result<HttpResponse> {
@@ -55,10 +55,13 @@ fn routes(app: &mut web::ServiceConfig) {
 }
 
 pub async fn start() -> std::io::Result<()> {
-    std::env::set_var("RUST_LOG", "debug");
-    env_logger::init();
+    if config::get_config().server.log {
+        std::env::set_var("RUST_LOG", "debug");
+        env_logger::init();
+    }
     
-    let secret_key = Key::generate();
+    let secret_key = Key::generate(); // For sessions
+    let backend = InMemoryBackend::builder().build(); // For rate limiting
 
     let mut handler1 = BoardPostgresHandler::new().await.unwrap();
     let mut handler2 = SharedPostgresHandler::new().await.unwrap();
@@ -68,22 +71,31 @@ pub async fn start() -> std::io::Result<()> {
 
     println!("starting HTTP server at http://localhost:{}", config::get_config().server.port);
 
-    HttpServer::new(move || App::new()
-        .app_data(Data::new(Mutex::new(handler1.clone())))
-        .app_data(Data::new(Mutex::new(handler2.clone())))
-        .configure(routes)
-        .wrap(IdentityMiddleware::default())
-        .wrap(
-            SessionMiddleware::builder(CookieSessionStore::default(), secret_key.clone())
-                .cookie_name("login".to_owned())
-                .cookie_secure(false)
-                .session_lifecycle(PersistentSession::default().session_ttl(ONE_MINUTE))
-                .build(),
-        )
-        .wrap(middleware::NormalizePath::trim())
-        .wrap(middleware::Logger::default())
-        .default_service(web::route().to(not_found))
-    )
+    HttpServer::new(move || {
+        let input = SimpleInputFunctionBuilder::new(
+                time::Duration::from_secs(config::get_config().server.max_requests_delta_seconds),
+                config::get_config().server.max_requests_per_delta)
+            .real_ip_key().build();
+        let rate_limit_middleware = RateLimiter::builder(backend.clone(), input).add_headers().build();
+
+        App::new()
+            .app_data(Data::new(Mutex::new(handler1.clone())))
+            .app_data(Data::new(Mutex::new(handler2.clone())))
+            .configure(routes)
+            .wrap(rate_limit_middleware)
+            .wrap(IdentityMiddleware::default())
+            .wrap(
+                SessionMiddleware::builder(CookieSessionStore::default(), secret_key.clone())
+                    .cookie_name("login".to_owned())
+                    .cookie_secure(false)
+                    .session_lifecycle(PersistentSession::default().session_ttl(Duration::seconds(
+                        config::get_config().server.login_cookie_valid_duration_seconds.try_into().unwrap())))
+                    .build(),
+            )
+            .wrap(middleware::NormalizePath::trim())
+            .wrap(middleware::Logger::default())
+            .default_service(web::route().to(not_found))
+    })
         .bind(("127.0.0.1", config::get_config().server.port))?
         .run().await
 }

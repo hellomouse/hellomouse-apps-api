@@ -7,3 +7,16 @@ name = "hellomouse_board" # db name
 
 [server]
 port = 8080
+
+# Whether to dislay debug logs
+log = true
+
+# How long the login cookie is valid for
+login_cookie_valid_duration_seconds = 4294967295
+
+# Rate limiting: at most max_requests_per_delta requests
+# per max_requests_delta_seconds, for example the values below
+# mean at most 100 requests / 60 seconds (1 min)
+# (per ip address)
+max_requests_per_delta = 100
+max_requests_delta_seconds = 60

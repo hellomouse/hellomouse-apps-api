@@ -5,7 +5,7 @@ use hellomouse_board_server::shared::types::account::{PermLevel, Perm};
 
 use hellomouse_board_server::app;
 
-#[tokio::main]
+#[actix_web::main]
 async fn main() -> Result<(), sqlx::Error> {
     app::start().await;
     Ok(())

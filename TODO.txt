@@ -1,34 +1,20 @@
-- readme, etc...
-
-
 note: json merge will keep old keys, maybe just overwrite and keep defaults?
-
-
-https://datatracker.ietf.org/doc/html/rfc7617
-https://www.lpalmieri.com/posts/password-authentication-in-rust/
-https://libpasta.github.io/introduction/basic-usage/
-
-
-- limit login attempts / ip / username
 
 cors
 
-https://github.com/actix/actix-extras/tree/master/actix-limitation
-https://crates.io/crates/actix-multipart-extract
+idea of metadata:
+- first user sets a "legal_keys": key -> an array
+- future users add to the array
 
 
 limit size of metadata and settings jsons
 
 config:
-limit board counts
-
-
-debug setting in config.toml for logging
+    limit board counts
 
 Name + desc should be stripped of HTML + length limited
 
 write tests for public + 2 users
-
 
 write list of tests for pins for 2 people
 
@@ -41,12 +27,24 @@ better test config: api base path
 
 
 
+
+
+
+
 future:
 add ability to favorite boards / pins
 
 make a file upload API
+https://crates.io/crates/actix-multipart-extract
+https://users.rust-lang.org/t/file-upload-in-actix-web/64871/3
 
 better sorting for search results
 
 API for updating PFP
+
+https://datatracker.ietf.org/doc/html/rfc7617
+https://www.lpalmieri.com/posts/password-authentication-in-rust/
+https://libpasta.github.io/introduction/basic-usage/
+
+
 
