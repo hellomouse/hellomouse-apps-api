@@ -1,5 +1,5 @@
 use crate::board::handlers::postgres_handler::{PostgresHandler};
-use crate::shared::types::app::{ErrorResponse, Response, login_fail};
+use crate::shared::types::app::{ErrorResponse, Response, login_fail, no_update_permission, no_view_permission};
 use crate::shared::types::account::{Perm, PermLevel, Account};
 use crate::board::types::board::Board;
 use crate::board::types::pin::{PinFlags, PinType, Pin};
@@ -85,8 +85,7 @@ async fn update_board(handler: Data<Mutex<PostgresHandler>>, identity: Option<Id
             };
         }
 
-        return Ok(HttpResponse::Unauthorized().json(
-            ErrorResponse{ error: "You do not have permission to update this resource".to_string() }));
+        no_update_permission!();
     }
     login_fail!();
 }
@@ -115,8 +114,7 @@ async fn delete_board(handler: Data<Mutex<PostgresHandler>>, identity: Option<Id
             };
         }
 
-        return Ok(HttpResponse::Unauthorized().json(
-            ErrorResponse{ error: "You do not have permission to update this resource".to_string() }));
+        no_update_permission!();
     }
     login_fail!();
 }
@@ -161,18 +159,22 @@ async fn get_boards(handler: Data<Mutex<PostgresHandler>>, identity: Option<Iden
 
 #[get("/v1/board/boards/single")]
 async fn get_board(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identity>, params: web::Query<BoardIdForm>) -> Result<HttpResponse> {
+    let mut logged_in_id = "public".to_string();
     if let Some(identity) = identity {
-        // identity.id().unwrap().as_str()
-        // TODO: only get boards users have permissiosn for
-
-        return match handler.lock().unwrap()
-            .get_board(&params.id).await {
-                Some(result) => Ok(HttpResponse::Ok().json(result)),
-                None => Ok(HttpResponse::InternalServerError().json(
-                    ErrorResponse{ error: "Failed to get board".to_string() }))
-        };
+        logged_in_id = identity.id().unwrap().to_owned();
     }
-    login_fail!();
+    
+    // Having any permission means being able to view the board
+    if handler.lock().unwrap().get_perms_for_pin(logged_in_id.as_str(), &params.id).await.is_none() {
+        no_update_permission!();
+    }
+    
+    return match handler.lock().unwrap()
+        .get_board(&params.id).await {
+            Some(result) => Ok(HttpResponse::Ok().json(result)),
+            None => Ok(HttpResponse::InternalServerError().json(
+                ErrorResponse{ error: "Failed to get board".to_string() }))
+    };
 }
 
 
@@ -224,7 +226,10 @@ struct ModifyPinForm {
 #[put("/v1/board/pins")]
 async fn modify_pin(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identity>, params: web::Json<ModifyPinForm>) -> Result<HttpResponse> {
     if let Some(identity) = identity {
-        // TODO: check if user has permission on the parent board
+        if !handler.lock().unwrap().can_edit_pin(identity.id().unwrap().as_str(), &params.id).await {
+            no_update_permission!();
+        }
+
         let pin_type = match params.pin_type {
             Some(v) => Some(num::FromPrimitive::from_u32(v as u32).unwrap()),
             None => None
@@ -254,17 +259,15 @@ struct PinIdForm { id: Uuid }
 async fn delete_pin(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identity>, params: web::Json<PinIdForm>) -> Result<HttpResponse> {
     if let Some(identity) = identity {
         let id_username = identity.id().unwrap();
-        // TODO: check if allowed to delete
 
-        if true {
-            return match handler.lock().unwrap().delete_pin(&params.id).await { // TODO
+        if handler.lock().unwrap().can_edit_pin(id_username.as_str(), &params.id).await {
+            return match handler.lock().unwrap().delete_pin(&params.id).await {
                 Ok(_) => Ok(HttpResponse::Ok().json(Response { msg: "Deleted".to_string() })),
                 Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error updating pin".to_string() }))
             };
         }
 
-        return Ok(HttpResponse::Unauthorized().json(
-            ErrorResponse{ error: "You do not have permission to update this resource".to_string() }));
+        no_update_permission!();
     }
     login_fail!();
 }
@@ -308,16 +311,20 @@ async fn get_pins(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identi
 
 #[get("/v1/board/pins/single")]
 async fn get_pin(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identity>, params: web::Query<PinIdForm>) -> Result<HttpResponse> {
+    let mut logged_in_id = "public".to_string();
     if let Some(identity) = identity {
-        // identity.id().unwrap().as_str()
-        // TODO: only get pins users have permissiosn for
-
-        return match handler.lock().unwrap()
-            .get_pin(&params.id).await {
-                Some(result) => Ok(HttpResponse::Ok().json(result)),
-                None => Ok(HttpResponse::InternalServerError().json(
-                    ErrorResponse{ error: "Failed to get pin".to_string() }))
-        };
+        logged_in_id = identity.id().unwrap().to_owned();
     }
-    login_fail!();
+
+    // Having any permission means being able to view the pin
+    if handler.lock().unwrap().get_perms_for_pin(logged_in_id.as_str(), &params.id).await.is_none() {
+        no_update_permission!();
+    }
+    
+    return match handler.lock().unwrap()
+        .get_pin(&params.id).await {
+            Some(result) => Ok(HttpResponse::Ok().json(result)),
+            None => Ok(HttpResponse::InternalServerError().json(
+                ErrorResponse{ error: "Failed to get pin".to_string() }))
+    };
 }

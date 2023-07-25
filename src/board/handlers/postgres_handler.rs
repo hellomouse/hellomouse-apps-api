@@ -350,4 +350,34 @@ impl PostgresHandler {
                 })
                 .fetch_all(&self.pool).await?)
     }
+
+    pub async fn get_perms_for_board(&self, user: &UserId, board_id: &Uuid) -> Option<Perm> {
+        let board = self.get_board(board_id).await;
+        if board.is_none() { return None; }
+        return Some(board.unwrap().perms.get(user).unwrap().clone());
+    }
+
+    pub async fn get_perms_for_pin(&self, user: &UserId, pin_id: &Uuid) -> Option<Perm> {
+        let pin = self.get_pin(pin_id).await;
+        if pin.is_none() { return None; }
+        return self.get_perms_for_board(user, &pin.unwrap().board_id).await;
+    }
+
+    pub async fn can_edit_pin(&self, user: &UserId, pin_id: &Uuid) -> bool {
+        let perm = self.get_perms_for_pin(user, pin_id).await;
+        if perm.is_none() { return false; }
+
+        let perm = perm.unwrap().perm_level;
+
+        // "Edit" or "Owner" are always free to edit
+        if perm == PermLevel::Edit || perm == PermLevel::Owner {
+            return true;
+        }
+        // SelfEdit can edit only if pin creator is self
+        if perm == PermLevel::SelfEdit {
+            let pin = self.get_pin(pin_id).await;
+            return pin.is_some() && pin.unwrap().creator == user;
+        }
+        return false;
+    }
 }

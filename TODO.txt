@@ -19,33 +19,32 @@ https://crates.io/crates/actix-multipart-extract
 
 limit size of metadata and settings jsons
 
-general file upload handler?
-
-// TODO: update pfp pic
-
-
 limit board counts
 limit shared per user
 
 debug setting in config.toml for logging
 
-
-
 Name + desc should be stripped of HTML + length limited
 
-abstract board -> methods:
-    -> canEditBoard
-    -> canEditPin
-    -> canView
-    -> canDeletePin
-
-add ability to favorite boards / pins
+write tests for public + 2 users
 
 
 write list of tests for pins for 2 people
 
-better sorting for search results
 
 tests:
 env variables, ...
 python3 -m unittest discover
+
+
+
+
+future:
+add ability to favorite boards / pins
+
+make a file upload API
+
+better sorting for search results
+
+API for updating PFP
+
