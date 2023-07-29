@@ -1,16 +1,22 @@
 note: json merge will keep old keys, maybe just overwrite and keep defaults?
 
-cors
-
-idea of metadata:
-- first user sets a "legal_keys": key -> an array
-- future users add to the array
-
+safe cors
 
 limit size of metadata and settings jsons
 
 config:
     limit board counts
+
+move routes to each module -> call configure for each
+
+shared rs cookie crashes - just remove
+
+logout user if logging in again
+
+api documentation
+
+/pin_types api
+
 
 Name + desc should be stripped of HTML + length limited
 
@@ -46,5 +52,14 @@ https://datatracker.ietf.org/doc/html/rfc7617
 https://www.lpalmieri.com/posts/password-authentication-in-rust/
 https://libpasta.github.io/introduction/basic-usage/
 
+idea of metadata:
+- first user sets a "legal_keys": key -> an array
+- future users add to the array
 
+make parameter names all good, like create_account
 
+tags or hashtags for notes
+
+locked - only owner can make modifications
+
+trash users

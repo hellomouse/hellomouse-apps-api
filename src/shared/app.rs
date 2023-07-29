@@ -18,11 +18,19 @@ struct LoginForm {
     password: String
 }
 
+#[derive(Serialize)]
+struct LoginResponse {
+    cookie: String
+}
+
 #[post("/v1/login")]
-async fn login(handler: Data<Mutex<PostgresHandler>>, req: HttpRequest, info: web::Form<LoginForm>) -> Result<HttpResponse> {
+async fn login(handler: Data<Mutex<PostgresHandler>>, req: HttpRequest, info: web::Json<LoginForm>) -> Result<HttpResponse> {
     if !handler.lock().unwrap().can_login(info.username.as_str(), info.password.as_str()).await.unwrap() { login_fail!() }
     Identity::login(&req.extensions(), info.username.as_str().to_owned()).unwrap();
-    Ok(HttpResponse::Ok().json(Response{ msg: "You logged in".to_string() }))
+    
+    // TODO: this line errors
+    // req.cookie("login").unwrap().to_string()
+    Ok(HttpResponse::Ok().json(LoginResponse{ cookie: "tet".to_string() }))
 }
 
 #[post("/v1/logout")]

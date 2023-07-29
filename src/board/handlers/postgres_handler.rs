@@ -185,11 +185,9 @@ impl PostgresHandler {
                     return Err(result.unwrap_err());
                 }
             }
-
-            tx.commit().await?;
-            return Ok(self.get_board(&board_id).await.unwrap());
         }
 
+        tx.commit().await?;
         return Ok(self.get_board(&board_id).await.unwrap());
     }
 

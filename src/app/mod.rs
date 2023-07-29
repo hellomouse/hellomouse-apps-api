@@ -2,11 +2,12 @@ use actix_identity::IdentityMiddleware;
 use actix_session::{config::PersistentSession, storage::CookieSessionStore, SessionMiddleware};
 use actix_web::{
     get, post, HttpResponse, web::{self, Data},
-    cookie::{time::Duration, Key},
+    cookie::{time::Duration, Key, SameSite},
     error,
     http::StatusCode,
     middleware, App, HttpMessage as _, HttpRequest, HttpServer, Responder, Result
 };
+use actix_cors::Cors;
 use actix_extensible_rate_limit::{RateLimiter};
 use actix_extensible_rate_limit::backend::{SimpleInputFunctionBuilder, memory::InMemoryBackend};
 use std::time;
@@ -63,8 +64,9 @@ pub async fn start() -> std::io::Result<()> {
     let secret_key = Key::generate(); // For sessions
     let backend = InMemoryBackend::builder().build(); // For rate limiting
 
-    let mut handler1 = BoardPostgresHandler::new().await.unwrap();
-    let mut handler2 = SharedPostgresHandler::new().await.unwrap();
+    let mut handler1 = SharedPostgresHandler::new().await.unwrap();
+    let mut handler2 = BoardPostgresHandler::new().await.unwrap();
+
 
     handler1.init().await.unwrap();
     handler2.init().await.unwrap();
@@ -84,10 +86,18 @@ pub async fn start() -> std::io::Result<()> {
             .configure(routes)
             .wrap(rate_limit_middleware)
             .wrap(IdentityMiddleware::default())
+            .wrap(Cors::permissive()
+                // .allowed_origin("http://localhost:3000")
+                // .supports_credentials()
+                // .allow_any_header()
+                // .allowed_methods(vec!["GET", "POST", "PUT", "DELETE"])
+            )
             .wrap(
                 SessionMiddleware::builder(CookieSessionStore::default(), secret_key.clone())
                     .cookie_name("login".to_owned())
+                    // .cookie_same_site(SameSite::Lax)
                     .cookie_secure(false)
+                    .cookie_http_only(true)
                     .session_lifecycle(PersistentSession::default().session_ttl(Duration::seconds(
                         config::get_config().server.login_cookie_valid_duration_seconds.try_into().unwrap())))
                     .build(),
