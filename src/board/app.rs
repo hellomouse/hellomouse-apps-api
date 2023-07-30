@@ -165,7 +165,7 @@ async fn get_board(handler: Data<Mutex<PostgresHandler>>, identity: Option<Ident
     }
     
     // Having any permission means being able to view the board
-    if handler.lock().unwrap().get_perms_for_pin(logged_in_id.as_str(), &params.id).await.is_none() {
+    if handler.lock().unwrap().get_perms_for_board(logged_in_id.as_str(), &params.id).await.is_none() {
         no_update_permission!();
     }
     

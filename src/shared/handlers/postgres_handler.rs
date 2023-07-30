@@ -51,7 +51,7 @@ impl PostgresHandler {
         let p = match sqlx::query("SELECT * FROM users WHERE id = $1;")
             .bind(user).fetch_one(&self.pool).await {
             Ok(user) => user.get::<String, &str>("password_hash"),
-            Err(err) => "".to_string()
+            Err(_err) => "".to_string()
         };
         Ok(libpasta::verify_password(&p, &password) && password.chars().count() > 0)
     }

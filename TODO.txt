@@ -7,9 +7,14 @@ limit size of metadata and settings jsons
 config:
     limit board counts
 
+
+endpoint to get share types
+
 move routes to each module -> call configure for each
 
-shared rs cookie crashes - just remove
+shared rs cookie crashes - just remove in login (dont return cookie)
+
+
 
 logout user if logging in again
 

@@ -66,8 +66,8 @@ struct UserSearchParamsReturn { users: Vec<UserSearchResult> }
 #[get("/v1/users/search")]
 async fn users_search(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identity>, params: web::Query<UserSearchParams>) -> Result<HttpResponse> {
     if identity.is_some() {
-        // Enforce filter is at least 3 characters long
-        if params.filter.len() < 3 {
+        // Enforce filter is at least 2 characters long
+        if params.filter.len() < 2 {
             return Ok(HttpResponse::Forbidden().json(
                 ErrorResponse{ error: "Filter must be at least 3 characters long".to_string() }));
         }
