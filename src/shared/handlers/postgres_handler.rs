@@ -56,10 +56,10 @@ impl PostgresHandler {
         Ok(libpasta::verify_password(&p, &password) && password.chars().count() > 0)
     }
 
-    pub async fn create_account(&mut self, user: &UserId, username: &str, password: &str) -> Result<(), sqlx::Error> {
+    pub async fn create_account(&mut self, user_id: &UserId, name: &str, password: &str) -> Result<(), sqlx::Error> {
         let password_hash = libpasta::hash_password(&password);
         sqlx::query("INSERT INTO users(id, name, password_hash) VALUES($1, $2, $3);")
-            .bind(user).bind(username).bind(password_hash)
+            .bind(user_id).bind(name).bind(password_hash)
             .execute(&self.pool).await?;
         Ok(())
     }
@@ -80,7 +80,7 @@ impl PostgresHandler {
 
     pub async fn search_users(&self, filter: &str) -> Result<Vec<UserSearchResult>, sqlx::Error> {
         Ok(sqlx::query("SELECT * FROM users WHERE ((id ILIKE $1 || '%') or 
-            (name ILIKE '%' || $1 || '%')) LIMIT 20;")
+            (name ILIKE '%' || $1 || '%')) and id != 'public' LIMIT 20;")
                 .bind(filter)
                 .map(|row: PgRow| UserSearchResult {
                     name: row.get::<String, &str>("name"),
