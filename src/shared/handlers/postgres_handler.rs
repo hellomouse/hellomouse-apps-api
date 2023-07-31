@@ -90,6 +90,17 @@ impl PostgresHandler {
                 .fetch_all(&self.pool).await?)
     }
 
+    pub async fn get_users_batch(&self, ids: Vec<String>) -> Result<Vec<UserSearchResult>, sqlx::Error> {
+        Ok(sqlx::query("SELECT * FROM users WHERE id = ANY($1) and id != 'public' LIMIT 20;")
+                .bind(ids)
+                .map(|row: PgRow| UserSearchResult {
+                    name: row.get::<String, &str>("name"),
+                    id: row.get::<String, &str>("id"),
+                    pfp_url: row.get::<Option<String>, &str>("pfp_url").unwrap_or("".to_string())
+                })
+                .fetch_all(&self.pool).await?)
+    }
+
     pub async fn delete_account(&mut self, user: &UserId) -> Result<(), sqlx::Error> {
         sqlx::query("DELETE FROM users WHERE id = $1;")
             .bind(user).execute(&self.pool).await?;

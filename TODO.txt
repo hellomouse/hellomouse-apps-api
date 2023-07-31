@@ -10,6 +10,12 @@ config:
 
 endpoint to get share types
 
+limit password length
+
+make /logout identity optional
+
+
+
 move routes to each module -> call configure for each
 
 

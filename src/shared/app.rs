@@ -97,6 +97,21 @@ async fn users(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identity>
     login_fail!();
 }
 
+#[derive(Deserialize)]
+struct BatchUserParams { ids: String }
+
+#[get("/v1/users/batch")]
+async fn users_batch(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identity>, params: web::Query<BatchUserParams>) -> Result<HttpResponse> {
+    if identity.is_some() {
+        let ids = params.ids.split(',').map(|s| s.to_string()).collect();
+        return match handler.lock().unwrap().get_users_batch(ids).await {
+            Ok(result) => Ok(HttpResponse::Ok().json(UserSearchParamsReturn { users: result })),
+            Err(_err) => Ok(HttpResponse::Forbidden().json(ErrorResponse{ error: "Could not get users".to_string() }))
+        };
+    }
+    login_fail!();
+}
+
 #[get("/v1/user_settings")]
 async fn get_user_settings(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identity>) -> Result<HttpResponse> {
     if let Some(identity) = identity {

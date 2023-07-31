@@ -37,6 +37,7 @@ fn routes(app: &mut web::ServiceConfig) {
         .service(shared_app::logout)
         .service(shared_app::user_settings)
         .service(shared_app::users)
+        .service(shared_app::users_batch)
         .service(shared_app::users_search)
         .service(shared_app::get_user_settings)
         
