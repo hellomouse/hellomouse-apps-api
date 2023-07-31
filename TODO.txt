@@ -12,11 +12,6 @@ endpoint to get share types
 
 move routes to each module -> call configure for each
 
-done:
-dont serch for users in public
-shared rs cookie crashes - just remove in login (dont return cookie)
-
-
 
 logout user if logging in again
 

@@ -238,7 +238,10 @@ impl PostgresHandler {
                     color: row.get::<String, &str>("color"),
                     created: row.get::<chrono::DateTime<Utc>, &str>("created"),
                     edited: row.get::<chrono::DateTime<Utc>, &str>("edited"),
-                    perms: HashMap::new()
+                    perms: HashMap::from([(
+                        row.get::<String, &str>("creator_id"),
+                        Perm { perm_level: row.get::<PermLevel, &str>("perm_id") }
+                    )])
                 })
                 .fetch_all(&self.pool).await?)
     }
