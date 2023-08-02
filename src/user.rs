@@ -1,6 +1,5 @@
-use clap::{arg, Args, Parser, Subcommand};
+use clap::{arg, Parser, Subcommand};
 use hellomouse_board_server::shared::handlers::postgres_handler::PostgresHandler as SharedPostgresHandler;
-use std::env;
 
 #[derive(Parser)]
 struct Cli {
