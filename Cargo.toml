@@ -8,6 +8,14 @@ rustflags = ["-C", "link-arg=--ld-path=/usr/bin/mold"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[[bin]]
+name = "server"
+path = "src/main.rs"
+
+[[bin]]
+name = "user"
+path = "src/user.rs"
+
 [dependencies]
 actix-identity = "0.5.2"
 actix-session = { version="0.7.2", features = ["cookie-session"] }
@@ -30,6 +38,7 @@ num = "0.4.1"
 num-traits = "0.2.16"
 actix-extensible-rate-limit = "0.2.1"
 actix-cors = "0.6.4"
+clap = { version = "4.0", features = ["derive"] }
 
 [profile.release]
 opt-level = 'z'     # Optimize for size
