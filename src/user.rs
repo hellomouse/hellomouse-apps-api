@@ -10,14 +10,20 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Add a new user
     Add {
         id: String,
         name: String,
         #[arg(value_parser = validate_password)]
         password: String,
     },
-    Delete {
+    /// Delete a user
+    Delete { id: String },
+    /// Reset a user's password
+    Password {
         id: String,
+        #[arg(value_parser = validate_password)]
+        password: String,
     },
 }
 
@@ -34,28 +40,29 @@ async fn main() {
     let mut postgres_handler = SharedPostgresHandler::new().await.unwrap();
     match &cli.command {
         Commands::Add { name, id, password } => match postgres_handler.get_user(id).await {
-            Ok(_) => {
-                println!(
-                    "{}",
-                    format!("Error: User with id `{id}` and name `{name}` already exists")
-                );
-            }
+            Ok(_) => println!(
+                "{}",
+                format!("Error: User with id `{id}` and name `{name}` already exists")
+            ),
             Err(_) => match postgres_handler.create_account(id, name, password).await {
-                Ok(_) => {
-                    println!("Successfully created account")
-                }
-                Err(_) => {
-                    println!("db error")
-                }
+                Ok(_) => println!("Successfully created account"),
+                Err(_) => println!("db error"),
             },
         },
         Commands::Delete { id } => match postgres_handler.delete_account(id).await {
-            Ok(_) => {
-                println!("Successfully deleted account")
-            }
-            Err(_) => {
-                println!("db error")
-            }
+            Ok(_) => println!("Successfully deleted account"),
+            Err(_) => println!("db error"),
+        },
+        Commands::Password { id, password } => match postgres_handler.get_user(id).await {
+            Ok(_) => match postgres_handler
+                .change_password(id, password.to_string())
+                .await
+            {
+                Ok(_) => println!("Successfully changed password"),
+                Err(_) => println!("db error"),
+            },
+
+            Err(_) => println!("db error"),
         },
     }
 }

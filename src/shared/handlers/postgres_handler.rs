@@ -78,6 +78,17 @@ impl PostgresHandler {
         Ok(())
     }
 
+    pub async fn change_password(&mut self, user_id: &UserId, password: String) -> Result<(), sqlx::Error> {
+        let password_hash = libpasta::hash_password(&password);
+        let user = sqlx::query("SELECT * FROM users where id = $1;")
+            .bind(user_id).fetch_one(&self.pool).await?;
+
+        sqlx::query("UPDATE users SET password_hash = $1 WHERE id = $2;")
+            .bind(password_hash).bind(user_id)
+            .execute(&self.pool).await?;
+        Ok(())
+    }
+
     pub async fn search_users(&self, filter: &str) -> Result<Vec<UserSearchResult>, sqlx::Error> {
         Ok(sqlx::query("SELECT * FROM users WHERE ((id ILIKE $1 || '%') or 
             (name ILIKE '%' || $1 || '%')) and id != 'public' LIMIT 20;")
