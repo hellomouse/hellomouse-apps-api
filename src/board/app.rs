@@ -185,7 +185,7 @@ async fn get_board(handler: Data<Mutex<PostgresHandler>>, identity: Option<Ident
 #[derive(Deserialize)]
 struct CreatePinForm {
     pin_type: i32,
-    flags: u64,
+    flags: PinFlags,
     board_id: Uuid,
     content: String,
     attachment_paths: Vec<String>,
@@ -195,13 +195,23 @@ struct CreatePinForm {
 #[post("/v1/board/pins")]
 async fn create_pin(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identity>, params: web::Json<CreatePinForm>) -> Result<HttpResponse> {
     if let Some(identity) = identity {
+        // SelfEdit, Edit, or Owner can create a pin
+        let perm = handler.lock().unwrap().get_perms_for_board(identity.id().unwrap().to_owned().as_str(), &params.board_id).await;
+        if perm.is_none() {
+            no_update_permission!();
+        }
+        let perm = perm.unwrap().perm_level;
+        if perm != PermLevel::Edit && perm != PermLevel::Owner && perm != PermLevel::SelfEdit {
+            no_update_permission!();
+        }
+
         return match handler.lock().unwrap().create_pin(
             identity.id().unwrap().as_str(),
             num::FromPrimitive::from_u32(params.pin_type as u32).unwrap(),
             &params.board_id,
             params.content.clone(),
             params.attachment_paths.clone(),
-            PinFlags::from_bits_truncate(params.flags as u64),
+            params.flags.clone(),
             params.metadata.clone()
         ).await {
             Ok(result) => Ok(HttpResponse::Ok().json(ResponseWithId { id: result.pin_id })),

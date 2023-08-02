@@ -8,23 +8,21 @@ config:
     limit board counts
 
 
-endpoint to get share types
 
 limit password length
 
-make /logout identity optional
+https://docs.rs/html_sanitizer/latest/html_sanitizer/
 
+pin interact endpoint
+
+pin metadata not working
+
+checklist pins
+
+edit perm can edit board, but cannot remove owners
 
 
 move routes to each module -> call configure for each
-
-
-logout user if logging in again
-
-api documentation
-
-/pin_types api
-
 
 Name + desc should be stripped of HTML + length limited
 

@@ -26,8 +26,8 @@ async fn login(handler: Data<Mutex<PostgresHandler>>, req: HttpRequest, info: we
 }
 
 #[post("/v1/logout")]
-async fn logout(id: Identity) -> Result<HttpResponse> {
-    id.logout();
+async fn logout(id: Option<Identity>) -> Result<HttpResponse> {
+    if let Some(id) = id { id.logout(); }
     Ok(HttpResponse::Ok().json(Response { msg: "You logged out".to_string() }))
 }
 
