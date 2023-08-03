@@ -157,11 +157,24 @@ impl PostgresHandler {
         if perms.is_some() && perms.as_ref().unwrap() != &b.perms {
             let mut perms = perms.unwrap();
 
-            // Editors cannot lower the permissions of other editors / owners or
-            // make anyone owner
             if b.perms.get(&user_id).unwrap().perm_level == PermLevel::Edit {
+                // Cannot make anyone else owner
+                let mut bad_keys: Vec<String> = Vec::new();
+                for (user, perm) in &mut perms {
+                    if perm.perm_level == PermLevel::Owner {
+                        bad_keys.push(user.clone().to_string());
+                    }
+                }
+                for user in bad_keys {
+                    let mut perm = perms.get(&user).unwrap().clone();
+                    perm.perm_level = PermLevel::Edit;
+                    perms.insert(user, perm);
+                }
+                // Editors cannot lower the permissions of other editors / owners
+                // (Other than themselves)
                 for (user, perm) in b.perms {
-                    if perm.perm_level == PermLevel::Edit || perm.perm_level == PermLevel::Owner {
+                    if (perm.perm_level == PermLevel::Edit || perm.perm_level == PermLevel::Owner) &&
+                            user != user_id {
                         perms.insert(user, perm.clone());
                     }
                 }
