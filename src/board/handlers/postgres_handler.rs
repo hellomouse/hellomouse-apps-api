@@ -46,7 +46,8 @@ impl PostgresHandler {
             creator_id text NOT NULL REFERENCES users(id),
             color text NOT NULL CHECK(color ~* '^#[a-fA-F0-9]{6}$'),
             created timestamptz NOT NULL,
-            edited timestamptz NOT NULL
+            edited timestamptz NOT NULL,
+            pin_count integer NOT NULL
         );"#).execute(&self.pool).await?;
 
         sqlx::query(r#"CREATE TABLE IF NOT EXISTS board.board_perms (
@@ -91,7 +92,8 @@ impl PostgresHandler {
                 color: b.get::<String, &str>("color"),
                 created: b.get::<chrono::DateTime<Utc>, &str>("created"),
                 edited: b.get::<chrono::DateTime<Utc>, &str>("edited"),
-                perms
+                perms,
+                pin_count: b.get::<i32, &str>("pin_count")
             }),
             Err(_err) => None
         }
@@ -109,8 +111,8 @@ impl PostgresHandler {
         let edited = created.clone();
         let mut tx = self.pool.begin().await?;
 
-        sqlx::query(r#"INSERT INTO board.boards(id, name, description, creator_id, color, created, edited)
-            VALUES($1, $2, $3, $4, $5, $6, $7);"#)
+        sqlx::query(r#"INSERT INTO board.boards(id, name, description, creator_id, color, created, edited, pin_count)
+            VALUES($1, $2, $3, $4, $5, $6, $7, 0);"#)
             .bind(id).bind(name).bind(desc).bind(creator_id).bind(color).bind(created).bind(edited)
             .execute(&mut *tx).await?;
 
@@ -240,7 +242,8 @@ impl PostgresHandler {
                     edited: row.get::<chrono::DateTime<Utc>, &str>("edited"),
                     perms: HashMap::from([(
                         user.to_string(), Perm { perm_level: row.get::<PermLevel, &str>("perm_id") }
-                    )])
+                    )]),
+                    pin_count: row.get::<i32, &str>("pin_count"),
                 })
                 .fetch_all(&self.pool).await?)
     }
@@ -285,6 +288,10 @@ impl PostgresHandler {
             .bind(id).bind(board_id).bind(pin_type as i16).bind(content).bind(creator)
             .bind(created).bind(edited).bind(flags.bits() as i32).bind(attachment_paths).bind(metadata)
             .execute(&mut *tx).await?;
+
+        // Update pin count
+        sqlx::query(r#"UPDATE board.boards SET pin_count = pin_count + 1 WHERE id = $1;"#)
+            .bind(board_id).execute(&mut *tx).await?;
         tx.commit().await?;
 
         return Ok(self.get_pin(&id).await.unwrap());
@@ -314,8 +321,11 @@ impl PostgresHandler {
     }
 
     pub async fn delete_pin(&mut self, pin_id: &Uuid) -> Result<(), sqlx::Error> {
-        sqlx::query("DELETE FROM board.pins WHERE id = $1;")
-            .bind(pin_id).execute(&self.pool).await?;
+        let board_id = sqlx::query("DELETE FROM board.pins WHERE id = $1 returning board_id;")
+            .bind(pin_id).fetch_one(&self.pool).await?;
+        let board_id = board_id.get::<Uuid, &str>("board_id");
+        sqlx::query(r#"UPDATE board.boards SET pin_count = pin_count - 1 WHERE id = $1;"#)
+            .bind(board_id).execute(&self.pool).await?;
         Ok(())
     }
 

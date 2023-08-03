@@ -14,5 +14,6 @@ pub struct Board {
     pub color: String,
     pub created: chrono::DateTime<Utc>,
     pub edited: chrono::DateTime<Utc>,
-    pub perms: HashMap<String, account::Perm>
+    pub perms: HashMap<String, account::Perm>,
+    pub pin_count: i32
 }

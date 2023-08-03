@@ -21,6 +21,8 @@ checklist pins
 
 edit perm can edit board, but cannot remove owners
 
+add db constraint for user_id - alphanuermic
+
 
 move routes to each module -> call configure for each
 
@@ -65,6 +67,7 @@ idea of metadata:
 make parameter names all good, like create_account
 
 tags or hashtags for notes
+- detect hashtags and allow sorting by
 
 locked - only owner can make modifications
 
