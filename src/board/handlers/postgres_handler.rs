@@ -139,7 +139,7 @@ impl PostgresHandler {
         return Ok(self.get_board(&id).await.unwrap());
     }
 
-    pub async fn modify_board(&mut self, board_id: &Uuid, name: Option<String>, desc: Option<String>,
+    pub async fn modify_board(&mut self, user_id: String, board_id: &Uuid, name: Option<String>, desc: Option<String>,
         color: Option<String>, perms: Option<HashMap<String, Perm>>)
             -> Result<board::Board, sqlx::Error> {
         let mut b = self.get_board(&board_id).await.unwrap();
@@ -155,7 +155,17 @@ impl PostgresHandler {
             .execute(&mut *tx).await?;
 
         if perms.is_some() && perms.as_ref().unwrap() != &b.perms {
-            let perms = perms.unwrap();
+            let mut perms = perms.unwrap();
+
+            // Editors cannot lower the permissions of other editors / owners or
+            // make anyone owner
+            if b.perms.get(&user_id).unwrap().perm_level == PermLevel::Edit {
+                for (user, perm) in b.perms {
+                    if perm.perm_level == PermLevel::Edit || perm.perm_level == PermLevel::Owner {
+                        perms.insert(user, perm.clone());
+                    }
+                }
+            }
 
             // Delete all existing perms, then insert new perms
             sqlx::query(r#"DELETE FROM board.board_perms WHERE board_id = $1;"#)

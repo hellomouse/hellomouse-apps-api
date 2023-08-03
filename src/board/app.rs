@@ -69,11 +69,13 @@ async fn update_board(handler: Data<Mutex<PostgresHandler>>, identity: Option<Id
         let board = board.unwrap();
         let id_username = identity.id().unwrap();
 
-        // Only owner can modify board
+        // Only owner or editor can modify board
         if 
                 board.perms.contains_key(&id_username) &&
-                board.perms.get(&id_username).unwrap().perm_level == PermLevel::Owner {
+                (board.perms.get(&id_username).unwrap().perm_level == PermLevel::Owner ||
+                 board.perms.get(&id_username).unwrap().perm_level == PermLevel::Edit) {
             return match handler.lock().unwrap().modify_board(
+                id_username,
                 &params.id,
                 params.name.clone(),
                 params.desc.clone(),

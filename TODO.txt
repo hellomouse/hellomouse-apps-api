@@ -15,8 +15,6 @@ https://docs.rs/html_sanitizer/latest/html_sanitizer/
 
 pin interact endpoint
 
-locked - only owner can make modifications
-edit perm can edit board, but cannot remove owners
 
 checklist pins
 
