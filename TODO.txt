@@ -15,13 +15,12 @@ https://docs.rs/html_sanitizer/latest/html_sanitizer/
 
 pin interact endpoint
 
-pin metadata not working
+locked - only owner can make modifications
+edit perm can edit board, but cannot remove owners
 
 checklist pins
 
-edit perm can edit board, but cannot remove owners
 
-add db constraint for user_id - alphanuermic
 
 
 move routes to each module -> call configure for each
@@ -69,6 +68,5 @@ make parameter names all good, like create_account
 tags or hashtags for notes
 - detect hashtags and allow sorting by
 
-locked - only owner can make modifications
 
 trash users

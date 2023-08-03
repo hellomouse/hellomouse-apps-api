@@ -30,8 +30,8 @@ impl PostgresHandler {
     pub async fn init(&mut self) -> Result<(), sqlx::Error> {
         sqlx::query(r#"
         CREATE TABLE IF NOT EXISTS users (
-            id text primary key unique CHECK(length(id) < 25),
-            name text NOT NULL CHECK(length(name) < 45),
+            id text primary key unique CHECK(length(id) < 25 and id ~ '^[a-zA-Z0-9_]+$'),
+            name text NOT NULL CHECK(length(name) < 45 and name ~ '^[a-zA-Z0-9_]+$'),
             pfp_url text CHECK(length(pfp_url) < 2048),
             settings json CHECK(pg_column_size(settings) < 1048576),
             password_hash text NOT NULL
