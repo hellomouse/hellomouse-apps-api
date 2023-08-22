@@ -33,9 +33,9 @@ struct ResponseWithId {
 }
 
 #[post("/v1/board/boards")]
-async fn create_board(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identity>, params: web::Json<CreateBoardForm>) -> Result<HttpResponse> {
+async fn create_board(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Json<CreateBoardForm>) -> Result<HttpResponse> {
     if let Some(identity) = identity {
-        return match handler.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).create_board(
+        return match handler.create_board(
             params.name.clone(),
             identity.id().unwrap().as_str(),
             params.desc.clone(),
@@ -60,9 +60,9 @@ struct UpdateBoardForm {
 }
 
 #[put("/v1/board/boards")]
-async fn update_board(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identity>, params: web::Json<UpdateBoardForm>) -> Result<HttpResponse> {
+async fn update_board(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Json<UpdateBoardForm>) -> Result<HttpResponse> {
     if let Some(identity) = identity {
-        let board = handler.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get_board(&params.id).await;
+        let board = handler.get_board(&params.id).await;
         if board.is_none() {
             return Ok(HttpResponse::Forbidden().json(ErrorResponse{ error: "Board ID does not exist".to_string() }));
         }
@@ -74,7 +74,7 @@ async fn update_board(handler: Data<Mutex<PostgresHandler>>, identity: Option<Id
                 board.perms.contains_key(&id_username) &&
                 (board.perms.get(&id_username).unwrap().perm_level == PermLevel::Owner ||
                  board.perms.get(&id_username).unwrap().perm_level == PermLevel::Edit) {
-            return match handler.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).modify_board(
+            return match handler.modify_board(
                 id_username,
                 &params.id,
                 params.name.clone(),
@@ -97,9 +97,9 @@ async fn update_board(handler: Data<Mutex<PostgresHandler>>, identity: Option<Id
 struct BoardIdForm { id: Uuid }
 
 #[delete("/v1/board/boards")]
-async fn delete_board(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identity>, params: web::Json<BoardIdForm>) -> Result<HttpResponse> {
+async fn delete_board(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Json<BoardIdForm>) -> Result<HttpResponse> {
     if let Some(identity) = identity {
-        let board = handler.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get_board(&params.id).await;
+        let board = handler.get_board(&params.id).await;
         if board.is_none() {
             return Ok(HttpResponse::Forbidden().json(ErrorResponse{ error: "Board ID does not exist".to_string() }));
         }
@@ -110,7 +110,7 @@ async fn delete_board(handler: Data<Mutex<PostgresHandler>>, identity: Option<Id
         if 
                 board.perms.contains_key(&id_username) &&
                 board.perms.get(&id_username).unwrap().perm_level == PermLevel::Owner {
-            return match handler.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).delete_board(&params.id).await {
+            return match handler.delete_board(&params.id).await {
                 Ok(_) => Ok(HttpResponse::Ok().json(Response { msg: "Deleted".to_string() })),
                 Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error deleting board".to_string() }))
             };
@@ -137,14 +137,14 @@ struct SearchBoardReturn {
 }
 
 #[get("/v1/board/boards")]
-async fn get_boards(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identity>, params: web::Query<SearchBoardForm>) -> Result<HttpResponse> {
+async fn get_boards(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Query<SearchBoardForm>) -> Result<HttpResponse> {
     // Public user can get boards
     let mut logged_in_id = "public".to_string();
     if let Some(identity) = identity {
         logged_in_id = identity.id().unwrap().to_owned();
     }
 
-    return match handler.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    return match handler
         .get_boards(
             logged_in_id.as_str(),
             params.offset,
@@ -160,18 +160,18 @@ async fn get_boards(handler: Data<Mutex<PostgresHandler>>, identity: Option<Iden
 }
 
 #[get("/v1/board/boards/single")]
-async fn get_board(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identity>, params: web::Query<BoardIdForm>) -> Result<HttpResponse> {
+async fn get_board(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Query<BoardIdForm>) -> Result<HttpResponse> {
     let mut logged_in_id = "public".to_string();
     if let Some(identity) = identity {
         logged_in_id = identity.id().unwrap().to_owned();
     }
     
     // Having any permission means being able to view the board
-    if handler.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get_perms_for_board(logged_in_id.as_str(), &params.id).await.is_none() {
+    if handler.get_perms_for_board(logged_in_id.as_str(), &params.id).await.is_none() {
         no_update_permission!();
     }
     
-    return match handler.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    return match handler
         .get_board(&params.id).await {
             Some(result) => Ok(HttpResponse::Ok().json(result)),
             None => Ok(HttpResponse::InternalServerError().json(
@@ -195,10 +195,10 @@ struct CreatePinForm {
 }
 
 #[post("/v1/board/pins")]
-async fn create_pin(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identity>, params: web::Json<CreatePinForm>) -> Result<HttpResponse> {
+async fn create_pin(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Json<CreatePinForm>) -> Result<HttpResponse> {
     if let Some(identity) = identity {
         // SelfEdit, Edit, or Owner can create a pin
-        let perm = handler.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get_perms_for_board(identity.id().unwrap().to_owned().as_str(), &params.board_id).await;
+        let perm = handler.get_perms_for_board(identity.id().unwrap().to_owned().as_str(), &params.board_id).await;
         if perm.is_none() {
             no_update_permission!();
         }
@@ -207,7 +207,7 @@ async fn create_pin(handler: Data<Mutex<PostgresHandler>>, identity: Option<Iden
             no_update_permission!();
         }
 
-        return match handler.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).create_pin(
+        return match handler.create_pin(
             identity.id().unwrap().as_str(),
             num::FromPrimitive::from_u32(params.pin_type as u32).unwrap(),
             &params.board_id,
@@ -236,9 +236,9 @@ struct ModifyPinForm {
 }
 
 #[put("/v1/board/pins")]
-async fn modify_pin(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identity>, params: web::Json<ModifyPinForm>) -> Result<HttpResponse> {
+async fn modify_pin(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Json<ModifyPinForm>) -> Result<HttpResponse> {
     if let Some(identity) = identity {
-        if !handler.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).can_edit_pin(identity.id().unwrap().as_str(), &params.id).await {
+        if !handler.can_edit_pin(identity.id().unwrap().as_str(), &params.id).await {
             no_update_permission!();
         }
 
@@ -247,7 +247,7 @@ async fn modify_pin(handler: Data<Mutex<PostgresHandler>>, identity: Option<Iden
             None => None
         };
 
-        return match handler.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).modify_pin(
+        return match handler.modify_pin(
             &params.id,
             pin_type,
             &params.board_id,
@@ -268,12 +268,12 @@ async fn modify_pin(handler: Data<Mutex<PostgresHandler>>, identity: Option<Iden
 struct PinIdForm { id: Uuid }
 
 #[delete("/v1/board/pins")]
-async fn delete_pin(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identity>, params: web::Json<PinIdForm>) -> Result<HttpResponse> {
+async fn delete_pin(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Json<PinIdForm>) -> Result<HttpResponse> {
     if let Some(identity) = identity {
         let id_username = identity.id().unwrap();
 
-        if handler.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).can_edit_pin(id_username.as_str(), &params.id).await {
-            return match handler.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).delete_pin(&params.id).await {
+        if handler.can_edit_pin(id_username.as_str(), &params.id).await {
+            return match handler.delete_pin(&params.id).await {
                 Ok(_) => Ok(HttpResponse::Ok().json(Response { msg: "Deleted".to_string() })),
                 Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error updating pin".to_string() }))
             };
@@ -299,14 +299,14 @@ struct SearchPinForm {
 struct SearchPinReturn { pins: Vec<Pin> }
 
 #[get("/v1/board/pins")]
-async fn get_pins(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identity>, params: web::Query<SearchPinForm>) -> Result<HttpResponse> {
+async fn get_pins(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Query<SearchPinForm>) -> Result<HttpResponse> {
     // Public user can get pins
     let mut logged_in_id = "public".to_string();
     if let Some(identity) = identity {
         logged_in_id = identity.id().unwrap().to_owned();
     }
 
-    return match handler.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    return match handler
         .get_pins(
             logged_in_id.as_str(),
             &params.board_id,
@@ -322,18 +322,18 @@ async fn get_pins(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identi
 }
 
 #[get("/v1/board/pins/single")]
-async fn get_pin(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identity>, params: web::Query<PinIdForm>) -> Result<HttpResponse> {
+async fn get_pin(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Query<PinIdForm>) -> Result<HttpResponse> {
     let mut logged_in_id = "public".to_string();
     if let Some(identity) = identity {
         logged_in_id = identity.id().unwrap().to_owned();
     }
 
     // Having any permission means being able to view the pin
-    if handler.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get_perms_for_pin(logged_in_id.as_str(), &params.id).await.is_none() {
+    if handler.get_perms_for_pin(logged_in_id.as_str(), &params.id).await.is_none() {
         no_update_permission!();
     }
     
-    return match handler.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    return match handler
         .get_pin(&params.id).await {
             Some(result) => Ok(HttpResponse::Ok().json(result)),
             None => Ok(HttpResponse::InternalServerError().json(

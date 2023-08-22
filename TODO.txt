@@ -7,8 +7,6 @@ limit size of metadata and settings jsons
 config:
     limit board counts
 
-
-
 limit password length
 
 https://docs.rs/html_sanitizer/latest/html_sanitizer/
@@ -18,7 +16,11 @@ pin interact endpoint
 
 checklist pins
 
+limit login attempts
 
+endpoint for adding web pages maybe?
+
+on timeout - instead of rejecting the request, return timeout
 
 
 move routes to each module -> call configure for each

@@ -79,13 +79,13 @@ pub async fn start() -> std::io::Result<()> {
                 time::Duration::from_secs(config::get_config().server.max_requests_delta_seconds),
                 config::get_config().server.max_requests_per_delta)
             .real_ip_key().build();
-        let rate_limit_middleware = RateLimiter::builder(backend.clone(), input).add_headers().build();
+        // let rate_limit_middleware = RateLimiter::builder(backend.clone(), input).add_headers().build();
 
         App::new()
-            .app_data(Data::new(Mutex::new(handler1.clone())))
-            .app_data(Data::new(Mutex::new(handler2.clone())))
+            .app_data(Data::new(handler1.clone()))
+            .app_data(Data::new(handler2.clone()))
             .configure(routes)
-            .wrap(rate_limit_middleware)
+            // .wrap(rate_limit_middleware)
             .wrap(IdentityMiddleware::default())
             .wrap(Cors::permissive()
                 // .allowed_origin("http://localhost:3000")
@@ -107,6 +107,7 @@ pub async fn start() -> std::io::Result<()> {
             .wrap(middleware::Logger::default())
             .default_service(web::route().to(not_found))
     })
+        .keep_alive(time::Duration::from_secs(30))
         .bind(("127.0.0.1", config::get_config().server.port))?
         .run().await
 }

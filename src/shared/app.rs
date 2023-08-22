@@ -19,8 +19,8 @@ struct LoginForm {
 }
 
 #[post("/v1/login")]
-async fn login(handler: Data<Mutex<PostgresHandler>>, req: HttpRequest, info: web::Json<LoginForm>) -> Result<HttpResponse> {
-    if !handler.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+async fn login(handler: Data<PostgresHandler>, req: HttpRequest, info: web::Json<LoginForm>) -> Result<HttpResponse> {
+    if !handler
         .can_login(info.username.as_str(), info.password.as_str()).await.unwrap() { login_fail!() }
     Identity::login(&req.extensions(), info.username.as_str().to_owned()).unwrap();
     Ok(HttpResponse::Ok().json(Response { msg: "You logged in".to_string() }))
@@ -36,10 +36,10 @@ async fn logout(id: Option<Identity>) -> Result<HttpResponse> {
 struct UserSettingsForm { settings: Value }
 
 #[put("/v1/user_settings")]
-async fn user_settings(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identity>, params: web::Json<UserSettingsForm>)
+async fn user_settings(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Json<UserSettingsForm>)
         -> Result<HttpResponse> {
     if let Some(identity) = identity {
-        return match handler.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        return match handler
             .change_account_settings(identity.id().unwrap().as_str(), params.settings.to_owned()).await {
             Ok(()) => Ok(HttpResponse::Ok().json(
                 Response{ msg: "Settings updated".to_string() })),
@@ -57,7 +57,7 @@ struct UserSearchParams { filter: String }
 struct UserSearchParamsReturn { users: Vec<UserSearchResult> }
 
 #[get("/v1/users/search")]
-async fn users_search(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identity>, params: web::Query<UserSearchParams>) -> Result<HttpResponse> {
+async fn users_search(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Query<UserSearchParams>) -> Result<HttpResponse> {
     if identity.is_some() {
         // Enforce filter is at least 2 characters long
         if params.filter.len() < 2 {
@@ -65,7 +65,7 @@ async fn users_search(handler: Data<Mutex<PostgresHandler>>, identity: Option<Id
                 ErrorResponse{ error: "Filter must be at least 3 characters long".to_string() }));
         }
         
-        return match handler.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).search_users(params.filter.as_str()).await {
+        return match handler.search_users(params.filter.as_str()).await {
             Ok(result) => Ok(HttpResponse::Ok().json(UserSearchParamsReturn { users: result })),
             Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error in search".to_string() }))
         };
@@ -84,9 +84,9 @@ struct UserParamsReturn {
 }
 
 #[get("/v1/users")]
-async fn users(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identity>, params: web::Query<UserParams>) -> Result<HttpResponse> {
+async fn users(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Query<UserParams>) -> Result<HttpResponse> {
     if identity.is_some() {
-        return match handler.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get_user(params.id.as_str()).await {
+        return match handler.get_user(params.id.as_str()).await {
             Ok(user) => Ok(HttpResponse::Ok().json(UserParamsReturn {
                 name: user.name,
                 id: user.id,
@@ -102,10 +102,10 @@ async fn users(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identity>
 struct BatchUserParams { ids: String }
 
 #[get("/v1/users/batch")]
-async fn users_batch(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identity>, params: web::Query<BatchUserParams>) -> Result<HttpResponse> {
+async fn users_batch(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Query<BatchUserParams>) -> Result<HttpResponse> {
     if identity.is_some() {
         let ids = params.ids.split(',').map(|s| s.to_string()).collect();
-        return match handler.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get_users_batch(ids).await {
+        return match handler.get_users_batch(ids).await {
             Ok(result) => Ok(HttpResponse::Ok().json(UserSearchParamsReturn { users: result })),
             Err(_err) => Ok(HttpResponse::Forbidden().json(ErrorResponse{ error: "Could not get users".to_string() }))
         };
@@ -114,9 +114,9 @@ async fn users_batch(handler: Data<Mutex<PostgresHandler>>, identity: Option<Ide
 }
 
 #[get("/v1/user_settings")]
-async fn get_user_settings(handler: Data<Mutex<PostgresHandler>>, identity: Option<Identity>) -> Result<HttpResponse> {
+async fn get_user_settings(handler: Data<PostgresHandler>, identity: Option<Identity>) -> Result<HttpResponse> {
     if let Some(identity) = identity {
-        return match handler.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get_user(identity.id().unwrap().as_str()).await {
+        return match handler.get_user(identity.id().unwrap().as_str()).await {
             Ok(user) => Ok(HttpResponse::Ok().json(
                 user.settings)),
             Err(_err) => Ok(HttpResponse::InternalServerError().json(

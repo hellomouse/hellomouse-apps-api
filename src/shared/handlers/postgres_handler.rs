@@ -27,7 +27,7 @@ impl PostgresHandler {
 
 impl PostgresHandler {
     // Called on first launch for setup
-    pub async fn init(&mut self) -> Result<(), sqlx::Error> {
+    pub async fn init(&self) -> Result<(), sqlx::Error> {
         sqlx::query(r#"
         CREATE TABLE IF NOT EXISTS users (
             id text primary key unique CHECK(length(id) < 25 and id ~ '^[a-zA-Z0-9_]+$'),
@@ -56,7 +56,7 @@ impl PostgresHandler {
         Ok(libpasta::verify_password(&p, &password) && password.chars().count() > 0)
     }
 
-    pub async fn create_account(&mut self, user_id: &UserId, name: &str, password: &str) -> Result<(), sqlx::Error> {
+    pub async fn create_account(&self, user_id: &UserId, name: &str, password: &str) -> Result<(), sqlx::Error> {
         let password_hash = libpasta::hash_password(&password);
         sqlx::query("INSERT INTO users(id, name, password_hash) VALUES($1, $2, $3);")
             .bind(user_id).bind(name).bind(password_hash)
@@ -64,7 +64,7 @@ impl PostgresHandler {
         Ok(())
     }
 
-    pub async fn change_account_settings(&mut self, user: &UserId, settings: Value) -> Result<(), sqlx::Error> {
+    pub async fn change_account_settings(&self, user: &UserId, settings: Value) -> Result<(), sqlx::Error> {
         let user = sqlx::query("SELECT * FROM users where id = $1;")
             .bind(user).fetch_one(&self.pool).await?;
         let mut new_settings: Value = user.try_get::<Value, &str>("settings").unwrap_or(
@@ -78,7 +78,7 @@ impl PostgresHandler {
         Ok(())
     }
 
-    pub async fn change_password(&mut self, user_id: &UserId, password: String) -> Result<(), sqlx::Error> {
+    pub async fn change_password(&self, user_id: &UserId, password: String) -> Result<(), sqlx::Error> {
         let password_hash = libpasta::hash_password(&password);
         let user = sqlx::query("SELECT * FROM users where id = $1;")
             .bind(user_id).fetch_one(&self.pool).await?;
@@ -112,7 +112,7 @@ impl PostgresHandler {
                 .fetch_all(&self.pool).await?)
     }
 
-    pub async fn delete_account(&mut self, user: &UserId) -> Result<(), sqlx::Error> {
+    pub async fn delete_account(&self, user: &UserId) -> Result<(), sqlx::Error> {
         sqlx::query("DELETE FROM users WHERE id = $1;")
             .bind(user).execute(&self.pool).await?;
         Ok(())

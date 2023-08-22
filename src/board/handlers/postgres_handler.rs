@@ -34,7 +34,7 @@ impl PostgresHandler {
     }
 
     // Called on first launch for setup
-    pub async fn init(&mut self) -> Result<(), sqlx::Error> {
+    pub async fn init(&self) -> Result<(), sqlx::Error> {
         // Stores all perms
         sqlx::query(format!("CREATE SCHEMA IF NOT EXISTS board AUTHORIZATION {};", config::get_config().database.user).as_str())
             .execute(&self.pool).await?;
@@ -99,7 +99,7 @@ impl PostgresHandler {
         }
     }
 
-    pub async fn create_board(&mut self, name: String, creator_id: &str, desc: String, color: String, perms: HashMap<String, Perm>)
+    pub async fn create_board(&self, name: String, creator_id: &str, desc: String, color: String, perms: HashMap<String, Perm>)
             -> Result<board::Board, sqlx::Error> {
         let mut id: Uuid;
         loop {
@@ -139,7 +139,7 @@ impl PostgresHandler {
         return Ok(self.get_board(&id).await.unwrap());
     }
 
-    pub async fn modify_board(&mut self, user_id: String, board_id: &Uuid, name: Option<String>, desc: Option<String>,
+    pub async fn modify_board(&self, user_id: String, board_id: &Uuid, name: Option<String>, desc: Option<String>,
         color: Option<String>, perms: Option<HashMap<String, Perm>>)
             -> Result<board::Board, sqlx::Error> {
         let mut b = self.get_board(&board_id).await.unwrap();
@@ -216,7 +216,7 @@ impl PostgresHandler {
         return Ok(self.get_board(&board_id).await.unwrap());
     }
 
-    pub async fn delete_board(&mut self, board_id: &Uuid) -> Result<(), sqlx::Error> {
+    pub async fn delete_board(&self, board_id: &Uuid) -> Result<(), sqlx::Error> {
         sqlx::query(r#"DELETE FROM board.pins WHERE board_id = $1;"#)
             .bind(board_id).execute(&self.pool).await?;
         sqlx::query(r#"DELETE FROM board.board_perms WHERE board_id = $1;"#)
@@ -293,7 +293,7 @@ impl PostgresHandler {
         }
     }
 
-    pub async fn create_pin(&mut self, creator: &UserId, pin_type: pin::PinType, board_id: &Uuid, content: String,
+    pub async fn create_pin(&self, creator: &UserId, pin_type: pin::PinType, board_id: &Uuid, content: String,
             attachment_paths: Vec<String>, flags: pin::PinFlags, metadata: Value)
             -> Result<pin::Pin, sqlx::Error> {
         let mut id: Uuid;
@@ -320,7 +320,7 @@ impl PostgresHandler {
         return Ok(self.get_pin(&id).await.unwrap());
     }
 
-    pub async fn modify_pin(&mut self, pin_id: &Uuid, pin_type: Option<pin::PinType>, board_id: &Option<Uuid>,
+    pub async fn modify_pin(&self, pin_id: &Uuid, pin_type: Option<pin::PinType>, board_id: &Option<Uuid>,
             content: Option<String>, attachment_paths: Option<Vec<String>>, flags: Option<pin::PinFlags>, metadata: Option<Value>)
             -> Result<pin::Pin, sqlx::Error> {
         let mut p = self.get_pin(&pin_id).await.unwrap();
@@ -343,7 +343,7 @@ impl PostgresHandler {
         return Ok(self.get_pin(&pin_id).await.unwrap());
     }
 
-    pub async fn delete_pin(&mut self, pin_id: &Uuid) -> Result<(), sqlx::Error> {
+    pub async fn delete_pin(&self, pin_id: &Uuid) -> Result<(), sqlx::Error> {
         let board_id = sqlx::query("DELETE FROM board.pins WHERE id = $1 returning board_id;")
             .bind(pin_id).fetch_one(&self.pool).await?;
         let board_id = board_id.get::<Uuid, &str>("board_id");
@@ -387,7 +387,11 @@ impl PostgresHandler {
     pub async fn get_perms_for_board(&self, user: &UserId, board_id: &Uuid) -> Option<Perm> {
         let board = self.get_board(board_id).await;
         if board.is_none() { return None; }
-        return Some(board.unwrap().perms.get(user).unwrap().clone());
+        let board = board.unwrap();
+
+        let perm = board.perms.get(user);
+        if perm.is_none() { return None; }
+        return Some(perm.unwrap().clone());
     }
 
     pub async fn get_perms_for_pin(&self, user: &UserId, pin_id: &Uuid) -> Option<Perm> {
