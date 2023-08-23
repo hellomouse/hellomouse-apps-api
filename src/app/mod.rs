@@ -12,8 +12,6 @@ use actix_extensible_rate_limit::{RateLimiter};
 use actix_extensible_rate_limit::backend::{SimpleInputFunctionBuilder, memory::InMemoryBackend};
 use std::time;
 
-use std::sync::Mutex;
-
 use crate::shared::util::config;
 
 use crate::shared::handlers::postgres_handler::PostgresHandler as SharedPostgresHandler;
@@ -65,8 +63,8 @@ pub async fn start() -> std::io::Result<()> {
     let secret_key = Key::generate(); // For sessions
     let backend = InMemoryBackend::builder().build(); // For rate limiting
 
-    let mut handler1 = SharedPostgresHandler::new().await.unwrap();
-    let mut handler2 = BoardPostgresHandler::new().await.unwrap();
+    let handler1 = SharedPostgresHandler::new().await.unwrap();
+    let handler2 = BoardPostgresHandler::new().await.unwrap();
 
 
     handler1.init().await.unwrap();

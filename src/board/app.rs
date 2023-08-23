@@ -1,7 +1,7 @@
 use crate::board::handlers::postgres_handler::{PostgresHandler};
 use crate::shared::types::app::{ErrorResponse, Response, login_fail, no_update_permission, no_view_permission};
 use crate::shared::types::account::{Perm, PermLevel, Account};
-use crate::board::types::board::Board;
+use crate::board::types::board::{SortBoard, Board};
 use crate::board::types::pin::{PinFlags, PinType, Pin};
 
 use actix_identity::{Identity};
@@ -128,7 +128,8 @@ struct SearchBoardForm {
     limit: Option<u32>,
     not_self: Option<bool>,
     owner_search: Option<String>,
-    query: Option<String>
+    query: Option<String>,
+    sort_by: Option<SortBoard>
 }
 
 #[derive(Serialize)]
@@ -151,7 +152,8 @@ async fn get_boards(handler: Data<PostgresHandler>, identity: Option<Identity>, 
             params.limit,
             params.not_self,
             &params.owner_search,
-            &params.query
+            &params.query,
+            params.sort_by.clone()
         ).await {
             Ok(result) => Ok(HttpResponse::Ok().json(SearchBoardReturn { boards: result })),
             Err(_err) => Ok(HttpResponse::InternalServerError().json(

@@ -1,4 +1,4 @@
-use crate::shared::types::account::{Account, UserId, Perm, PermLevel};
+use crate::shared::types::account::{UserId, Perm, PermLevel};
 use crate::board::types::pin;
 use crate::board::types::board;
 use crate::shared::util::config;
@@ -227,7 +227,8 @@ impl PostgresHandler {
     }
 
     pub async fn get_boards(&self, user: &UserId, offset: Option<u32>, limit: Option<u32>,
-        not_self: Option<bool>, owner_search: &Option<String>, search_query: &Option<String>)
+        not_self: Option<bool>, owner_search: &Option<String>, search_query: &Option<String>,
+        sort_by: Option<board::SortBoard>)
             -> Result<Vec<board::Board>, sqlx::Error> {
 
         let mut owner_search_id = match owner_search {
@@ -241,14 +242,16 @@ impl PostgresHandler {
             owner_search_id = None;
         }
 
+        let sort_condition = sort_by.unwrap_or(board::SortBoard::Created).to_string();
+
         // Only return tables user can access
-        Ok(sqlx::query("SELECT * FROM board.boards
+        Ok(sqlx::query(("SELECT * FROM board.boards
             INNER JOIN board.board_perms ON
                 user_id = $4 and board_id = id and
                 ($1 is null or name ILIKE '%' || $1 || '%' or description ILIKE '%' || $1 || '%') and
                 ($2 is null or creator_id = $2) and
                 ($3 is null or creator_id != $3)
-            ORDER BY created OFFSET $5 LIMIT $6;")
+            ORDER BY ".to_owned() + &sort_condition + " OFFSET $5 LIMIT $6;").as_str())
                 .bind(search_query)
                 .bind(owner_search_id)
                 .bind(owner_disallow_id)

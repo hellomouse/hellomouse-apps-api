@@ -17,3 +17,20 @@ pub struct Board {
     pub perms: HashMap<String, account::Perm>,
     pub pin_count: i32
 }
+
+#[derive(Clone, Serialize, Deserialize)]
+pub enum SortBoard {
+    Name,
+    Created,
+    Edited
+}
+
+impl std::fmt::Display for SortBoard {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            SortBoard::Name => write!(f, "lower(name)"),
+            SortBoard::Created => write!(f, "created"),
+            SortBoard::Edited => write!(f, "edited"),
+        }
+    }
+}
