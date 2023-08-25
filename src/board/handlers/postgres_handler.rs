@@ -232,7 +232,7 @@ impl PostgresHandler {
             -> Result<Vec<board::Board>, sqlx::Error> {
 
         let mut owner_search_id = match owner_search {
-            None => Some(user.to_string()),
+            None => None,
             Some(owner) => Some(owner).cloned()
         };
 
