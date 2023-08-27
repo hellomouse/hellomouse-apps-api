@@ -384,6 +384,30 @@ impl PostgresHandler {
         Ok(())
     }
 
+    pub async fn mass_delete_pins(&self, user: &UserId, pin_ids: Vec<Uuid>)
+            -> Result<(), sqlx::Error> {
+        // Limit pin id count to 100
+        let end = std::cmp::min(100, pin_ids.len());
+        let pin_ids = &pin_ids[0..end];
+
+        // Filter pins to ones the user can edit
+        let pin_ids = futures::stream::iter(pin_ids)
+            .filter(|x| async { self.can_edit_pin(user, x).await })
+            .collect::<Vec<Uuid>>()
+            .await;
+
+        let mut tx = self.pool.begin().await?;
+        for pin_id in pin_ids {
+            let board_id = sqlx::query("DELETE FROM board.pins WHERE id = $1 returning board_id;")
+                .bind(pin_id).fetch_one(&mut *tx).await?;
+            let board_id = board_id.get::<Uuid, &str>("board_id");
+            sqlx::query(r#"UPDATE board.boards SET pin_count = pin_count - 1 WHERE id = $1;"#)
+                .bind(board_id).execute(&mut *tx).await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
     pub async fn get_pins(&self, user: &UserId, board_id: &Option<Uuid>, offset: Option<u32>, limit: Option<u32>,
             creator: &Option<String>, search_query: &Option<String>)
                 -> Result<Vec<pin::Pin>, sqlx::Error> {

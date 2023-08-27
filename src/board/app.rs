@@ -301,7 +301,7 @@ async fn delete_pin(handler: Data<PostgresHandler>, identity: Option<Identity>, 
         if handler.can_edit_pin(id_username.as_str(), &params.id).await {
             return match handler.delete_pin(&params.id).await {
                 Ok(_) => Ok(HttpResponse::Ok().json(Response { msg: "Deleted".to_string() })),
-                Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error updating pin".to_string() }))
+                Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error updating pins".to_string() }))
             };
         }
 
@@ -310,6 +310,25 @@ async fn delete_pin(handler: Data<PostgresHandler>, identity: Option<Identity>, 
     login_fail!();
 }
 
+// Bulk delete pins
+#[derive(Deserialize)]
+struct BulkDeletePinsForm {
+    pin_ids: Vec<Uuid>
+}
+
+#[delete("/v1/board/pins/bulk_delete")]
+async fn bulk_delete_pins(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Json<BulkDeletePinsForm>) -> Result<HttpResponse> {
+    if let Some(identity) = identity {
+        return match handler.mass_delete_pins(
+            identity.id().unwrap().as_str(),
+            params.pin_ids.clone()
+        ).await {
+            Ok(()) => Ok(HttpResponse::Ok().json(Response { msg: "Deleted pins".to_string() })),
+            Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error deleting pins".to_string() }))
+        };
+    }
+    login_fail!();
+}
 
 // Get pins
 #[derive(Deserialize)]
