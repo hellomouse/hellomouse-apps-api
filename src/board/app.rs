@@ -265,6 +265,30 @@ async fn modify_pin(handler: Data<PostgresHandler>, identity: Option<Identity>, 
     login_fail!();
 }
 
+// Bulk modify pin flags
+#[derive(Deserialize)]
+struct ModifyPinFlagsForm {
+    pin_ids: Vec<Uuid>,
+    new_flags: PinFlags,
+    add_flags: bool
+}
+
+#[put("/v1/board/pins/bulk_flags")]
+async fn bulk_modify_pin_flags(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Json<ModifyPinFlagsForm>) -> Result<HttpResponse> {
+    if let Some(identity) = identity {
+        return match handler.mass_edit_pin_flags(
+            identity.id().unwrap().as_str(),
+            params.pin_ids.clone(),
+            params.new_flags.clone(),
+            params.add_flags
+        ).await {
+            Ok(()) => Ok(HttpResponse::Ok().json(Response { msg: "Updated pin flags".to_string() })),
+            Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error updating pin".to_string() }))
+        };
+    }
+    login_fail!();
+}
+
 // Delete a pin
 #[derive(Deserialize)]
 struct PinIdForm { id: Uuid }

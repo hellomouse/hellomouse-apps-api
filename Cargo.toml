@@ -39,6 +39,7 @@ num-traits = "0.2.16"
 actix-extensible-rate-limit = "0.2.1"
 actix-cors = "0.6.4"
 clap = { version = "4.0", features = ["derive"] }
+futures = "0.3.28"
 
 [profile.release]
 opt-level = 'z'     # Optimize for size

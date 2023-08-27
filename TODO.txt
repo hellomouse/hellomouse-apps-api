@@ -9,6 +9,9 @@ config:
 
 limit password length
 
+make pins flag actually order pins
+
+
 https://docs.rs/html_sanitizer/latest/html_sanitizer/
 
 pin interact endpoint

@@ -9,6 +9,7 @@ use uuid::Uuid;
 use std::collections::HashMap;
 use std::cmp;
 use serde_json::Value;
+use futures::StreamExt;
 
 use num;
 
@@ -352,6 +353,34 @@ impl PostgresHandler {
         let board_id = board_id.get::<Uuid, &str>("board_id");
         sqlx::query(r#"UPDATE board.boards SET pin_count = pin_count - 1 WHERE id = $1;"#)
             .bind(board_id).execute(&self.pool).await?;
+        Ok(())
+    }
+
+    pub async fn mass_edit_pin_flags(&self, user: &UserId, pin_ids: Vec<Uuid>, flags: pin::PinFlags, add_flags: bool)
+            -> Result<(), sqlx::Error> {
+        // Limit pin id count to 100
+        let end = std::cmp::min(100, pin_ids.len());
+        let pin_ids = &pin_ids[0..end];
+
+        // Filter pins to ones the user can edit
+        let pin_ids = futures::stream::iter(pin_ids)
+            .filter(|x| async { self.can_edit_pin(user, x).await })
+            .collect::<Vec<Uuid>>()
+            .await;
+
+        let edited = chrono::offset::Utc::now();
+
+        let mut tx = self.pool.begin().await?;
+        if add_flags {
+            sqlx::query("UPDATE board.pins SET edited = $1, flags = flags | $2 WHERE id = ANY($3);")
+                .bind(edited).bind(flags.bits() as i32).bind(pin_ids)
+                .execute(&mut *tx).await?;
+        } else {
+            sqlx::query("UPDATE board.pins SET edited = $1, flags = flags & ~($2) WHERE id = ANY($3);")
+                .bind(edited).bind(flags.bits() as i32).bind(pin_ids)
+                .execute(&mut *tx).await?;
+        }
+        tx.commit().await?;
         Ok(())
     }
 
