@@ -229,7 +229,7 @@ impl PostgresHandler {
 
     pub async fn get_boards(&self, user: &UserId, offset: Option<u32>, limit: Option<u32>,
         not_self: Option<bool>, owner_search: &Option<String>, search_query: &Option<String>,
-        sort_by: Option<board::SortBoard>)
+        sort_by: Option<board::SortBoard>, sort_down: Option<bool>)
             -> Result<Vec<board::Board>, sqlx::Error> {
 
         let mut owner_search_id = match owner_search {
@@ -244,6 +244,8 @@ impl PostgresHandler {
         }
 
         let sort_condition = sort_by.unwrap_or(board::SortBoard::Created).to_string();
+        let mut sort_down_str = "ASC";
+        if !sort_down.unwrap_or(true) { sort_down_str = "DESC"; }
 
         // Only return tables user can access
         Ok(sqlx::query(("SELECT * FROM board.boards
@@ -252,7 +254,7 @@ impl PostgresHandler {
                 ($1 is null or name ILIKE '%' || $1 || '%' or description ILIKE '%' || $1 || '%') and
                 ($2 is null or creator_id = $2) and
                 ($3 is null or creator_id != $3)
-            ORDER BY ".to_owned() + &sort_condition + " OFFSET $5 LIMIT $6;").as_str())
+            ORDER BY ".to_owned() + &sort_condition + " " + &sort_down_str + " OFFSET $5 LIMIT $6;").as_str())
                 .bind(search_query)
                 .bind(owner_search_id)
                 .bind(owner_disallow_id)
@@ -409,16 +411,21 @@ impl PostgresHandler {
     }
 
     pub async fn get_pins(&self, user: &UserId, board_id: &Option<Uuid>, offset: Option<u32>, limit: Option<u32>,
-            creator: &Option<String>, search_query: &Option<String>)
+            creator: &Option<String>, search_query: &Option<String>, sort_by: Option<pin::SortPin>, sort_down: Option<bool>)
                 -> Result<Vec<pin::Pin>, sqlx::Error> {
+        let sort_condition = sort_by.unwrap_or(pin::SortPin::Created).to_string();
+        let mut sort_down_str = "DESC";
+        if !sort_down.unwrap_or(true) { sort_down_str = "ASC"; }
+
         // Only return pins the user can view
-        Ok(sqlx::query("SELECT p2.*, p1.user_id, p1.board_id FROM board.pins p2
+        Ok(sqlx::query(("SELECT p2.*, p1.user_id, p1.board_id FROM board.pins p2
             INNER JOIN board.board_perms p1 ON
                 p1.user_id = $4 and p1.board_id = p2.board_id and
                 ($1 is null or p1.board_id = $1) and
                 ($2 is null or p2.content ILIKE '%' || $2 || '%') and
                 ($3 is null or p2.creator_id = $3)
-            ORDER BY created OFFSET $5 LIMIT $6;")
+            ORDER BY CASE when (flags & 4 = 4) then 2 when (flags & 2 = 2) then 0 else 1 end ".to_owned() +
+            sort_down_str + "," + &sort_condition + " " + sort_down_str + " OFFSET $5 LIMIT $6;").as_str())
                 .bind(board_id)
                 .bind(search_query)
                 .bind(creator)

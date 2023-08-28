@@ -2,7 +2,7 @@ use crate::board::handlers::postgres_handler::{PostgresHandler};
 use crate::shared::types::app::{ErrorResponse, Response, login_fail, no_update_permission, no_view_permission};
 use crate::shared::types::account::{Perm, PermLevel, Account};
 use crate::board::types::board::{SortBoard, Board};
-use crate::board::types::pin::{PinFlags, PinType, Pin};
+use crate::board::types::pin::{PinFlags, PinType, Pin, SortPin};
 
 use actix_identity::{Identity};
 use actix_web::{
@@ -129,7 +129,8 @@ struct SearchBoardForm {
     not_self: Option<bool>,
     owner_search: Option<String>,
     query: Option<String>,
-    sort_by: Option<SortBoard>
+    sort_by: Option<SortBoard>,
+    sort_down: Option<bool>
 }
 
 #[derive(Serialize)]
@@ -153,7 +154,8 @@ async fn get_boards(handler: Data<PostgresHandler>, identity: Option<Identity>, 
             params.not_self,
             &params.owner_search,
             &params.query,
-            params.sort_by.clone()
+            params.sort_by.clone(),
+            params.sort_down.clone()
         ).await {
             Ok(result) => Ok(HttpResponse::Ok().json(SearchBoardReturn { boards: result })),
             Err(_err) => Ok(HttpResponse::InternalServerError().json(
@@ -337,7 +339,9 @@ struct SearchPinForm {
     offset: Option<u32>,
     limit: Option<u32>,
     creator: Option<String>,
-    query: Option<String>
+    query: Option<String>,
+    sort_by: Option<SortPin>,
+    sort_down: Option<bool>
 }
 
 #[derive(Serialize)]
@@ -358,7 +362,9 @@ async fn get_pins(handler: Data<PostgresHandler>, identity: Option<Identity>, pa
             params.offset,
             params.limit,
             &params.creator,
-            &params.query
+            &params.query,
+            params.sort_by.clone(),
+            params.sort_down.clone()
         ).await {
             Ok(result) => Ok(HttpResponse::Ok().json(SearchPinReturn { pins: result })),
             Err(_err) => Ok(HttpResponse::InternalServerError().json(

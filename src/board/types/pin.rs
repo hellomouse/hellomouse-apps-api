@@ -41,3 +41,18 @@ pub struct Pin {
     pub attachment_paths: Vec<String>,
     pub metadata: Value
 }
+
+#[derive(Clone, Serialize, Deserialize)]
+pub enum SortPin {
+    Created,
+    Edited
+}
+
+impl std::fmt::Display for SortPin {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            SortPin::Created => write!(f, "created"),
+            SortPin::Edited => write!(f, "edited"),
+        }
+    }
+}
