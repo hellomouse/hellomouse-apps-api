@@ -386,6 +386,33 @@ impl PostgresHandler {
         Ok(())
     }
 
+    pub async fn mass_edit_pin_colors(&self, user: &UserId, pin_ids: Vec<Uuid>, new_color: &String)
+            -> Result<(), sqlx::Error> {
+        // Limit pin id count to 100
+        let end = std::cmp::min(100, pin_ids.len());
+        let pin_ids = &pin_ids[0..end];
+
+        // Filter pins to ones the user can edit
+        let pin_ids = futures::stream::iter(pin_ids)
+            .filter(|x| async { self.can_edit_pin(user, x).await })
+            .collect::<Vec<Uuid>>()
+            .await;
+
+        let edited = chrono::offset::Utc::now();
+
+        // Ensure new_color soemwhat resembles a hex string
+        if new_color.len() > 7 || !new_color.chars().all(|x| x == '#' || x.is_alphabetic()) {
+            return Ok(());
+        }
+
+        let mut tx = self.pool.begin().await?;
+        sqlx::query(("UPDATE board.pins SET edited = $1, metadata = jsonb_set(metadata::jsonb, '{color}', '\"".to_owned() + new_color + "\"')::json WHERE id = ANY($2);").as_str())
+            .bind(edited).bind(pin_ids)
+            .execute(&mut *tx).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     pub async fn mass_delete_pins(&self, user: &UserId, pin_ids: Vec<Uuid>)
             -> Result<(), sqlx::Error> {
         // Limit pin id count to 100

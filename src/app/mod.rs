@@ -53,6 +53,7 @@ fn routes(app: &mut web::ServiceConfig) {
         .service(board_app::get_pins)
         .service(board_app::bulk_delete_pins)
         .service(board_app::bulk_modify_pin_flags)
+        .service(board_app::bulk_modify_pin_colors)
         .service(board_app::get_pin);
 }
 
