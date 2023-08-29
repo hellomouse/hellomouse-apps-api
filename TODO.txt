@@ -41,10 +41,7 @@ env variables, ...
 better test config: api base path
 
 
-
-
-
-
+don't re-generate the rules every time for htmlclean
 
 
 future:
