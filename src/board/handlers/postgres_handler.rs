@@ -2,6 +2,7 @@ use crate::shared::types::account::{UserId, Perm, PermLevel};
 use crate::board::types::pin;
 use crate::board::types::board;
 use crate::shared::util::config;
+use crate::shared::util::clean_html::clean_html;
 
 use chrono;
 use chrono::Utc;
@@ -307,7 +308,8 @@ impl PostgresHandler {
             id = Uuid::new_v4();
             if self.get_pin(&id).await.is_none() { break; }
         }
-
+        
+        let content = clean_html(&content);
         let created = chrono::offset::Utc::now();
         let edited = created.clone();
         let mut tx = self.pool.begin().await?;
@@ -338,6 +340,8 @@ impl PostgresHandler {
         update_if_not_none!(p, attachment_paths);
         update_if_not_none!(p, flags);
         update_if_not_none!(p, metadata);
+
+        p.content = clean_html(&p.content);
 
         let mut tx = self.pool.begin().await?;
         sqlx::query("UPDATE board.pins SET pin_type = $2, content = $3, edited = $4, flags = $5, attachment_paths = $6, metadata = $7 WHERE id = $1;")
