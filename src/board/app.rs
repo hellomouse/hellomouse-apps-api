@@ -391,7 +391,7 @@ async fn get_pins(handler: Data<PostgresHandler>, identity: Option<Identity>, pa
         ).await {
             Ok(result) => Ok(HttpResponse::Ok().json(SearchPinReturn { pins: result })),
             Err(_err) => Ok(HttpResponse::InternalServerError().json(
-                ErrorResponse{ error: _err.to_string() })) // "Failed to search for pins"
+                ErrorResponse{ error: "Failed to search for pins".to_string() }))
     };
 }
 
@@ -413,4 +413,82 @@ async fn get_pin(handler: Data<PostgresHandler>, identity: Option<Identity>, par
             None => Ok(HttpResponse::InternalServerError().json(
                 ErrorResponse{ error: "Failed to get pin".to_string() }))
     };
+}
+
+
+// Add + delete favorites
+#[derive(Deserialize)]
+struct FavoritesForm {
+    pin_ids: Vec<Uuid>
+}
+
+#[put("/v1/board/pins/favorites")]
+async fn add_favorites(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Json<FavoritesForm>) -> Result<HttpResponse> {
+    if let Some(identity) = identity {
+        return match handler.add_favorites(
+            identity.id().unwrap().as_str(),
+            &params.pin_ids
+        ).await {
+            Ok(()) => Ok(HttpResponse::Ok().json(Response { msg: "Added favorites".to_string() })),
+            Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error adding pins".to_string() }))
+        };
+    }
+    login_fail!();
+}
+
+#[delete("/v1/board/pins/favorites")]
+async fn remove_favorites(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Json<FavoritesForm>) -> Result<HttpResponse> {
+    if let Some(identity) = identity {
+        return match handler.remove_favorites(
+            identity.id().unwrap().as_str(),
+            &params.pin_ids
+        ).await {
+            Ok(()) => Ok(HttpResponse::Ok().json(Response { msg: "Deleted favorites".to_string() })),
+            Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error deleting pins".to_string() }))
+        };
+    }
+    login_fail!();
+}
+
+// Get favorites
+#[derive(Deserialize)]
+struct SearchFavoritesForm {
+    offset: Option<u32>,
+    limit: Option<u32>,
+    sort_by: Option<SortPin>,
+    sort_down: Option<bool>
+}
+
+#[get("/v1/board/pins/favorites")]
+async fn get_favorites(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Query<SearchFavoritesForm>) -> Result<HttpResponse> {
+    if let Some(identity) = identity {
+        return match handler.get_favorites(
+            identity.id().unwrap().as_str(),
+            params.offset.clone(),
+            params.limit.clone(),
+            params.sort_by.clone(),
+            params.sort_down.clone()
+        ).await {
+            Ok(result) => Ok(HttpResponse::Ok().json(SearchPinReturn { pins: result })),
+            Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Failed to get favorites".to_string() }))
+        };
+    }
+    login_fail!();
+}
+
+#[derive(Serialize)]
+struct CheckFavoriteReturn { pins: Vec<Uuid> }
+
+#[post("/v1/board/pins/favorites/check")]
+async fn check_favorites(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Json<FavoritesForm>) -> Result<HttpResponse> {
+    if let Some(identity) = identity {
+        return match handler.check_favorites(
+            identity.id().unwrap().as_str(),
+            &params.pin_ids
+        ).await {
+            Ok(result) => Ok(HttpResponse::Ok().json(CheckFavoriteReturn { pins: result })),
+            Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Failed to check favorites".to_string() }))
+        };
+    }
+    login_fail!();
 }

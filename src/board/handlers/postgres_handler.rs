@@ -59,6 +59,12 @@ impl PostgresHandler {
             UNIQUE(board_id, user_id)
         );"#).execute(&self.pool).await?;
 
+        sqlx::query(r#"CREATE TABLE IF NOT EXISTS board.favorites (
+            user_id text NOT NULL REFERENCES users(id),
+            pin_id uuid NOT NULL,
+            UNIQUE(user_id, pin_id)
+        );"#).execute(&self.pool).await?;
+
         sqlx::query(r#"CREATE TABLE IF NOT EXISTS board.pins (
             id uuid primary key unique,
             board_id uuid NOT NULL REFERENCES board.boards(id),
@@ -510,5 +516,76 @@ impl PostgresHandler {
             return pin.is_some() && pin.unwrap().creator == user;
         }
         return false;
+    }
+
+    pub async fn add_favorites(&self, user: &UserId, pin_ids: &Vec<Uuid>)
+            -> Result<(), sqlx::Error> {
+        // Limit pin id count to 100
+        let end = std::cmp::min(100, pin_ids.len());
+        let pin_ids = &pin_ids[0..end];
+
+        sqlx::query(r#"INSERT INTO board.favorites(user_id, pin_id) VALUES($1, unnest($2)) ON CONFLICT DO NOTHING;"#)
+            .bind(user).bind(pin_ids)
+            .execute(&self.pool).await?;
+        return Ok(());
+    }
+
+    pub async fn remove_favorites(&self, user: &UserId, pin_ids: &Vec<Uuid>)
+            -> Result<(), sqlx::Error> {
+        // Limit pin id count to 100
+        let end = std::cmp::min(100, pin_ids.len());
+        let pin_ids = &pin_ids[0..end];
+
+        sqlx::query(r#"DELETE FROM board.favorites WHERE user_id = $1 and pin_id = ANY($2);"#)
+            .bind(user).bind(pin_ids)
+            .execute(&self.pool).await?;
+        return Ok(());
+    }
+
+    pub async fn get_favorites(&self, user: &UserId,
+            offset: Option<u32>, limit: Option<u32>,
+            sort_by: Option<pin::SortPin>, sort_down: Option<bool>)
+            -> Result<Vec<pin::Pin>, sqlx::Error> {
+        // TODO: clean pins
+
+        let sort_condition = sort_by.unwrap_or(pin::SortPin::Created).to_string();
+        let mut sort_down_str = "DESC";
+        if !sort_down.unwrap_or(true) { sort_down_str = "ASC"; }
+            
+        Ok(sqlx::query(("SELECT p2.* FROM board.pins p2
+                INNER JOIN board.favorites ON user_id = $1 and id = pin_id
+                INNER JOIN board.board_perms p1 ON
+                    p1.user_id = $1 and p1.board_id = p2.board_id
+                ORDER BY CASE when (flags & 4 = 4) then 2 when (flags & 2 = 2) then 0 else 1 end ".to_owned() +
+                sort_down_str + "," + &sort_condition + " " + sort_down_str + "
+                OFFSET $2 LIMIT $3;").as_str())
+            .bind(user)
+            .bind(offset.unwrap_or(0) as i32)
+            .bind(cmp::min(100, limit.unwrap_or(20) as i32))
+            .map(|row: PgRow| pin::Pin {
+                board_id: row.get::<Uuid, &str>("board_id"),
+                pin_id: row.get::<Uuid, &str>("id"),
+                pin_type: num::FromPrimitive::from_u32(row.get::<i32, &str>("pin_type") as u32).unwrap(),
+                content: row.get::<String, &str>("content"),
+                creator: row.get::<String, &str>("creator_id"),
+                created: row.get::<chrono::DateTime<Utc>, &str>("created"),
+                edited: row.get::<chrono::DateTime<Utc>, &str>("edited"),
+                flags: pin::PinFlags::from_bits_truncate(row.get::<i32, &str>("flags") as u64),
+                attachment_paths: row.get::<Option<Vec<String>>, &str>("attachment_paths").unwrap_or(Vec::new()),
+                metadata: row.get::<Option<Value>, &str>("metadata").unwrap_or(serde_json::from_str("{}").unwrap())
+            })
+            .fetch_all(&self.pool).await?)
+    }
+
+    pub async fn check_favorites(&self, user: &UserId, pin_ids: &Vec<Uuid>)
+            -> Result<Vec<Uuid>, sqlx::Error> {
+        // Limit pin id count to 100
+        let end = std::cmp::min(100, pin_ids.len());
+        let pin_ids = &pin_ids[0..end];
+
+        Ok(sqlx::query("SELECT pin_id FROM board.favorites WHERE user_id = $1 and pin_id = ANY($2);")
+            .bind(user).bind(pin_ids)
+            .map(|row: PgRow| row.get::<Uuid, &str>("pin_id"))
+            .fetch_all(&self.pool).await?)
     }
 }

@@ -54,7 +54,11 @@ fn routes(app: &mut web::ServiceConfig) {
         .service(board_app::bulk_delete_pins)
         .service(board_app::bulk_modify_pin_flags)
         .service(board_app::bulk_modify_pin_colors)
-        .service(board_app::get_pin);
+        .service(board_app::get_pin)
+        .service(board_app::get_favorites)
+        .service(board_app::add_favorites)
+        .service(board_app::remove_favorites)
+        .service(board_app::check_favorites);
 }
 
 pub async fn start() -> std::io::Result<()> {

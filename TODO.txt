@@ -9,11 +9,6 @@ config:
 
 limit password length
 
-make pins flag actually order pins
-
-
-https://docs.rs/html_sanitizer/latest/html_sanitizer/
-
 pin interact endpoint
 
 
@@ -30,28 +25,16 @@ move routes to each module -> call configure for each
 
 Name + desc should be stripped of HTML + length limited
 
-write tests for public + 2 users
-
-write list of tests for pins for 2 people
-
-
-tests:
-env variables, ...
-
-better test config: api base path
-
 
 don't re-generate the rules every time for htmlclean
 
 
 future:
-add ability to favorite boards / pins
 
 make a file upload API
 https://crates.io/crates/actix-multipart-extract
 https://users.rust-lang.org/t/file-upload-in-actix-web/64871/3
 
-better sorting for search results
 
 API for updating PFP
 
