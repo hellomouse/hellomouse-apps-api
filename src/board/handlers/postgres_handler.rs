@@ -59,12 +59,6 @@ impl PostgresHandler {
             UNIQUE(board_id, user_id)
         );"#).execute(&self.pool).await?;
 
-        sqlx::query(r#"CREATE TABLE IF NOT EXISTS board.favorites (
-            user_id text NOT NULL REFERENCES users(id),
-            pin_id uuid NOT NULL,
-            UNIQUE(user_id, pin_id)
-        );"#).execute(&self.pool).await?;
-
         sqlx::query(r#"CREATE TABLE IF NOT EXISTS board.pins (
             id uuid primary key unique,
             board_id uuid NOT NULL REFERENCES board.boards(id),
@@ -76,6 +70,12 @@ impl PostgresHandler {
             flags integer NOT NULL,
             attachment_paths text[],
             metadata json
+        );"#).execute(&self.pool).await?;
+
+        sqlx::query(r#"CREATE TABLE IF NOT EXISTS board.favorites (
+            user_id text NOT NULL REFERENCES users(id),
+            pin_id uuid NOT NULL REFERENCES board.pins(id),
+            UNIQUE(user_id, pin_id)
         );"#).execute(&self.pool).await?;
 
         Ok(())
@@ -360,6 +360,11 @@ impl PostgresHandler {
     }
 
     pub async fn delete_pin(&self, pin_id: &Uuid) -> Result<(), sqlx::Error> {
+        // Delete favorites that link to deleted pins
+        sqlx::query("DELETE FROM board.favorites WHERE pin_id = $1;")
+            .bind(pin_id)
+            .execute(&self.pool).await?;
+    
         let board_id = sqlx::query("DELETE FROM board.pins WHERE id = $1 returning board_id;")
             .bind(pin_id).fetch_one(&self.pool).await?;
         let board_id = board_id.get::<Uuid, &str>("board_id");
@@ -546,8 +551,6 @@ impl PostgresHandler {
             offset: Option<u32>, limit: Option<u32>,
             sort_by: Option<pin::SortPin>, sort_down: Option<bool>)
             -> Result<Vec<pin::Pin>, sqlx::Error> {
-        // TODO: clean pins
-
         let sort_condition = sort_by.unwrap_or(pin::SortPin::Created).to_string();
         let mut sort_down_str = "DESC";
         if !sort_down.unwrap_or(true) { sort_down_str = "ASC"; }
