@@ -140,27 +140,26 @@ struct SearchBoardReturn {
 
 #[get("/v1/board/boards")]
 async fn get_boards(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Query<SearchBoardForm>) -> Result<HttpResponse> {
-    // Public user can get boards
-    let mut logged_in_id = "public".to_string();
     if let Some(identity) = identity {
-        logged_in_id = identity.id().unwrap().to_owned();
-    }
+        let logged_in_id = identity.id().unwrap().to_owned();
 
-    return match handler
-        .get_boards(
-            logged_in_id.as_str(),
-            params.offset,
-            params.limit,
-            params.not_self,
-            &params.owner_search,
-            &params.query,
-            params.sort_by.clone(),
-            params.sort_down.clone()
-        ).await {
-            Ok(result) => Ok(HttpResponse::Ok().json(SearchBoardReturn { boards: result })),
-            Err(_err) => Ok(HttpResponse::InternalServerError().json(
-                ErrorResponse{ error: "Failed to search for boards".to_string() }))
-    };
+        return match handler
+            .get_boards(
+                logged_in_id.as_str(),
+                params.offset,
+                params.limit,
+                params.not_self,
+                &params.owner_search,
+                &params.query,
+                params.sort_by.clone(),
+                params.sort_down.clone()
+            ).await {
+                Ok(result) => Ok(HttpResponse::Ok().json(SearchBoardReturn { boards: result })),
+                Err(_err) => Ok(HttpResponse::InternalServerError().json(
+                    ErrorResponse{ error: "Failed to search for boards".to_string() }))
+        };
+    }
+    login_fail!();
 }
 
 #[get("/v1/board/boards/single")]
