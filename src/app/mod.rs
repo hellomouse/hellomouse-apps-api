@@ -43,6 +43,7 @@ fn routes(app: &mut web::ServiceConfig) {
         .service(board_app::create_board)
         .service(board_app::update_board)
         .service(board_app::delete_board)
+        .service(board_app::bulk_modify_board_colors)
         .service(board_app::get_boards)
         .service(board_app::get_board)
         

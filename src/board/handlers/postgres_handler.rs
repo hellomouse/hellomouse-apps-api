@@ -234,6 +234,33 @@ impl PostgresHandler {
         Ok(())
     }
 
+    pub async fn mass_edit_board_colors(&self, user: &UserId, board_ids: Vec<Uuid>, new_color: &String)
+            -> Result<(), sqlx::Error> {
+        // Limit board id count to 200
+        let end = std::cmp::min(200, board_ids.len());
+        let board_ids = &board_ids[0..end];
+
+        // Filter boards to ones the user can edit
+        let board_ids = futures::stream::iter(board_ids)
+            .filter(|x| async {
+                let board = self.get_board(x).await;
+                if board.is_none() { return false; }
+                let board = board.unwrap();
+                return board.perms.contains_key(user) &&
+                    (board.perms.get(user).unwrap().perm_level == PermLevel::Owner ||
+                    board.perms.get(user).unwrap().perm_level == PermLevel::Edit);
+            })
+            .collect::<Vec<Uuid>>()
+            .await;
+
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("UPDATE board.boards SET color = $1 WHERE id = ANY($2);")
+            .bind(new_color).bind(board_ids)
+            .execute(&mut *tx).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     pub async fn get_boards(&self, user: &UserId, offset: Option<u32>, limit: Option<u32>,
         not_self: Option<bool>, owner_search: &Option<String>, search_query: &Option<String>,
         sort_by: Option<board::SortBoard>, sort_down: Option<bool>)

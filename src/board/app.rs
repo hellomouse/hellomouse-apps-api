@@ -121,6 +121,29 @@ async fn delete_board(handler: Data<PostgresHandler>, identity: Option<Identity>
     login_fail!();
 }
 
+// Bulk change board colors
+#[derive(Deserialize)]
+struct ModifyBoardColorsForm {
+    board_ids: Vec<Uuid>,
+    color: String
+}
+
+#[put("/v1/board/boards/bulk_colors")]
+async fn bulk_modify_board_colors(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Json<ModifyBoardColorsForm>) -> Result<HttpResponse> {
+    if let Some(identity) = identity {
+        let id_username = identity.id().unwrap();
+        return match handler.mass_edit_board_colors(
+                &id_username,
+                params.board_ids.clone(),
+                &params.color
+            ).await {
+            Ok(_) => Ok(HttpResponse::Ok().json(Response { msg: "Colors changed".to_string() })),
+            Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error editing boards".to_string() }))
+        };
+    }
+    login_fail!();
+}
+
 // Get boards
 #[derive(Deserialize)]
 struct SearchBoardForm {
