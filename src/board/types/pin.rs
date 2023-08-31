@@ -10,7 +10,7 @@ pub enum PinType {
     Markdown = 0,
     ImageGallery = 1,
     Link = 2,
-    Review = 3
+    Checklist = 3
 }
 
 // IMPORTANT: Even though it's implemented as a u64

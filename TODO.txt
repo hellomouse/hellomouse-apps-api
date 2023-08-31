@@ -42,10 +42,6 @@ https://datatracker.ietf.org/doc/html/rfc7617
 https://www.lpalmieri.com/posts/password-authentication-in-rust/
 https://libpasta.github.io/introduction/basic-usage/
 
-idea of metadata:
-- first user sets a "legal_keys": key -> an array
-- future users add to the array
-
 make parameter names all good, like create_account
 
 tags or hashtags for notes
