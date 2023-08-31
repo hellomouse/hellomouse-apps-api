@@ -443,7 +443,7 @@ impl PostgresHandler {
         let edited = chrono::offset::Utc::now();
 
         // Ensure new_color soemwhat resembles a hex string
-        if new_color.len() > 7 || !new_color.chars().all(|x| x == '#' || x.is_alphabetic()) {
+        if new_color.len() > 7 || !new_color.chars().all(|x| x == '#' || x.is_alphabetic() || x.is_numeric()) {
             return Ok(());
         }
 
