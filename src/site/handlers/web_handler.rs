@@ -30,8 +30,8 @@ impl WebHandler {
         CREATE TABLE IF NOT EXISTS site.queue (
             id uuid primary key unique,
             created timestamptz NOT NULL,
-            name text NOT NULL,
-            data text NOT NULL,
+            name text NOT NULL CHECK(length(data) < 512),
+            data text NOT NULL CHECK(length(data) < 4096),
             requestor text NOT NULL,
             priority integer NOT NULL
         );"#).execute(&self.pool).await?;
@@ -42,11 +42,11 @@ impl WebHandler {
             id uuid primary key unique,
             created timestamptz NOT NULL,
             finished timestamptz NOT NULL,
-            name text NOT NULL,
-            data text NOT NULL,
+            name text NOT NULL CHECK(length(name) < 512),
+            data text NOT NULL CHECK(length(data) < 4096),
             requestor text NOT NULL,
             priority integer NOT NULL,
-            status text NOT NULL
+            status text NOT NULL CHECK(length(status) < 512)
         );"#).execute(&self.pool).await?;
         Ok(())
     }
