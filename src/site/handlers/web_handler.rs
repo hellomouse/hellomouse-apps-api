@@ -41,7 +41,8 @@ impl WebHandler {
             created timestamptz NOT NULL,
             name text NOT NULL,
             data text NOT NULL,
-            requestor text NOT NULL
+            requestor text NOT NULL,
+            priority integer NOT NULL
         );"#).execute(&self.pool).await?;
         Ok(())
     }
@@ -51,8 +52,9 @@ impl WebHandler {
         let uuid = Uuid::new_v4();
 
         // TODO: make method
-        sqlx::query("INSERT INTO site.queue VALUES($1, $2, $3, $4, $5);")
-            .bind(uuid).bind(now).bind("pin_preview").bind(format!("{}|{}", pin_id, url)).bind(user.to_string())
+        sqlx::query("INSERT INTO site.queue VALUES($1, $2, $3, $4, $5, $6);")
+            .bind(uuid).bind(now).bind("pin_preview").bind(format!("{}|{}", pin_id, url))
+            .bind(user.to_string()).bind(10) // Priority of 10
             .execute(&self.pool).await?;
         sqlx::query("NOTIFY hellomouse_apps_site_update;")
             .execute(&self.pool).await?;
