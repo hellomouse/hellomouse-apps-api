@@ -65,7 +65,8 @@ fn routes(app: &mut web::ServiceConfig) {
         
         // Site
         .service(site_app::get_pin_preview)
-        .service(site_app::download_site);
+        .service(site_app::download_site)
+        .service(site_app::job_status);
 }
 
 pub async fn start() -> std::io::Result<()> {

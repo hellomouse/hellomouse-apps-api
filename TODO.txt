@@ -15,8 +15,6 @@ avoid &String
 
 limit login attempts
 
-endpoint for adding web pages maybe?
-
 on timeout - instead of rejecting the request, return timeout
 
 

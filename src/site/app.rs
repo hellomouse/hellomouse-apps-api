@@ -1,6 +1,7 @@
 use crate::site::handlers::web_handler::WebHandler;
 use crate::board::handlers::postgres_handler::PostgresHandler;
 use crate::shared::types::app::{ErrorResponse, Response, login_fail, no_update_permission};
+use crate::site::types::status::Job;
 
 use actix_identity::Identity;
 use actix_web::{
@@ -63,6 +64,34 @@ async fn download_site(handler: Data<WebHandler>, identity: Option<Identity>, pa
         }
         let result = result.unwrap();
         return Ok(HttpResponse::Ok().json(UuidResponse { uuid: result }));
+    }
+    login_fail!();
+}
+
+
+// Get job status
+#[derive(Deserialize)]
+struct SiteStatusForm {
+    offset: Option<u32>,
+    limit: Option<u32>
+}
+
+#[derive(Serialize)]
+struct SiteStatusResponse {
+    jobs: Vec<Job>
+}
+
+#[get("/v1/site/status")]
+async fn job_status(handler: Data<WebHandler>, identity: Option<Identity>, params: web::Query<SiteStatusForm>) -> Result<HttpResponse> {
+    if let Some(identity) = identity {
+        let logged_in_id = identity.id().unwrap().to_owned();
+
+        let result = handler.get_status_queue(&logged_in_id, params.offset.clone(), params.limit.clone()).await;
+        if !result.is_ok() {
+            return Ok(HttpResponse::Ok().json(ErrorResponse { error: "Failed to get status".to_string() }));
+        }
+        let result = result.unwrap();
+        return Ok(HttpResponse::Ok().json(SiteStatusResponse { jobs: result }));
     }
     login_fail!();
 }
