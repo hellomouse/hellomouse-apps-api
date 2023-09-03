@@ -11,8 +11,7 @@ limit password length
 
 pin interact endpoint
 
-
-checklist pins
+avoid &String
 
 limit login attempts
 
@@ -22,9 +21,6 @@ on timeout - instead of rejecting the request, return timeout
 
 
 move routes to each module -> call configure for each
-
-Name + desc should be stripped of HTML + length limited
-
 
 don't re-generate the rules every time for htmlclean
 
