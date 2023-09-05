@@ -54,7 +54,7 @@ async fn download_site(handler: Data<WebHandler>, identity: Option<Identity>, pa
     if let Some(identity) = identity {
         let logged_in_id = identity.id().unwrap().to_owned();
 
-        if params.strategy != "pdf" && params.strategy != "html" && params.strategy != "media" {
+        if params.strategy != "pdf" && params.strategy != "html" && params.strategy != "media" && params.strategy != "screenshot" {
             return Ok(HttpResponse::Ok().json(ErrorResponse { error: "Unknown download strategy".to_string() }));
         }
 
