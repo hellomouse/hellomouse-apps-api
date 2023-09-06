@@ -48,6 +48,8 @@ fn routes(app: &mut web::ServiceConfig) {
         .service(board_app::bulk_modify_board_colors)
         .service(board_app::get_boards)
         .service(board_app::get_board)
+        .service(board_app::bulk_get_board_perms)
+        .service(board_app::bulk_update_board_perms)
         
         // Pins
         .service(board_app::create_pin)

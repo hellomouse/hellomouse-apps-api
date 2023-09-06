@@ -7,7 +7,7 @@ use crate::shared::util::clean_html::clean_html;
 use chrono;
 use chrono::Utc;
 use uuid::Uuid;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::cmp;
 use serde_json::Value;
 use futures::StreamExt;
@@ -311,6 +311,157 @@ impl PostgresHandler {
                 .fetch_all(&self.pool).await?)
     }
 
+    pub async fn get_mass_board_share_perms(&self, user: &UserId, ids: &Vec<Uuid>)
+            -> Result<HashMap<String, board::MassBoardShareUser>, sqlx::Error> {
+        // Limit id count to 200
+        let end = std::cmp::min(200, ids.len());
+        let ids = &ids[0..end];
+
+        // user: (name, perm)
+        let mut result: HashMap<String,  board::MassBoardShareUser> = HashMap::new();
+
+        // First: get perms for all allowed tables (user can edit or is owner)
+        let allowed_board_ids = sqlx::query("SELECT DISTINCT board_id FROM board.boards
+            INNER JOIN board.board_perms ON
+            user_id = $1 and board_id = ANY($2) and (perm_id = 3 or perm_id = 4)
+            LIMIT 200;")
+                .bind(user).bind(ids)
+                .map(|row: PgRow| row.get::<Uuid, &str>("board_id"))
+                .fetch_all(&self.pool).await?;
+        let board_len = allowed_board_ids.len();
+
+        // Get all users with these allowed board ids, ensuring they exist in all boards
+        let users = sqlx::query("SELECT perm_id, id, board_id, name FROM users, board.board_perms WHERE
+            user_id = id and board_id = ANY($2) LIMIT 200;")
+                .bind(user).bind(allowed_board_ids)
+                .map(|row: PgRow| (
+                    row.get::<String, &str>("id"),
+                    row.get::<String, &str>("name"),
+                    Perm { perm_level: row.get("perm_id") }
+                ))
+                .fetch_all(&self.pool).await?;
+
+        // Remove users that do not have the same perm level in all boards
+        let mut bad_users = HashSet::new();
+        let mut user_count: HashMap<String, u32> = HashMap::new();
+        for u in users {
+            if result.contains_key(&u.0) {
+                if u.2.perm_level != result.get(&u.0).unwrap().perm.perm_level {
+                    result.remove(&u.0);
+                    user_count.remove(&u.0);
+                    bad_users.insert(u.0);
+                } else {
+                    *user_count.get_mut(&u.0).unwrap() += 1;
+                }
+            } else if !bad_users.contains(&u.0) {
+                user_count.insert(u.0.clone(), 1);
+                result.insert(u.0, board::MassBoardShareUser {
+                    name: u.1,
+                    perm: u.2
+                });
+            }
+        }
+        for (key, value) in user_count {
+            if value as usize != board_len {
+                result.remove(&key);
+            }
+        }
+
+        Ok(result)
+    }
+
+    // Returns number of boards changed
+    pub async fn mass_change_board_share_perms(&self, user: &UserId, ids: &Vec<Uuid>,
+                perms_to_add: &HashMap<String, Perm>, users_to_delete: &Vec<String>)
+            -> Result<i32, sqlx::Error> {
+        // Limit id count to 200
+        let end = std::cmp::min(200, ids.len());
+        let ids = &ids[0..end];
+
+        // First: get perms for all allowed tables (user can edit or is owner)
+        let mut tx = self.pool.begin().await?;
+        let allowed_board_ids_owner = sqlx::query("SELECT DISTINCT board_id FROM board.boards
+            INNER JOIN board.board_perms ON user_id = $1 and board_id = ANY($2) and perm_id = $3 LIMIT 200;")
+                .bind(user).bind(ids).bind(PermLevel::Owner)
+                .map(|row: PgRow| row.get::<Uuid, &str>("board_id"))
+                .fetch_all(&mut *tx).await?;
+
+        let allowed_board_ids_edit = sqlx::query("SELECT DISTINCT board_id FROM board.boards
+            INNER JOIN board.board_perms ON user_id = $1 and board_id = ANY($2) and perm_id = $3 LIMIT 200;")
+                .bind(user).bind(ids).bind(PermLevel::Edit)
+                .map(|row: PgRow| row.get::<Uuid, &str>("board_id"))
+                .fetch_all(&mut *tx).await?;
+
+        // For boards the user has an edit perm on, they cannot change the user of anyone
+        // except with perm below edit (3)
+        let can_edit_users = sqlx::query("SELECT DISTINCT board_id, user_id FROM board.boards
+            INNER JOIN board.board_perms ON board_id = ANY($1) and perm_id < $2 LIMIT 200;")
+                .bind(allowed_board_ids_edit.clone()).bind(PermLevel::Edit)
+                .map(|row: PgRow| row.get::<String, &str>("user_id"))
+                .fetch_all(&mut *tx).await?;
+
+        for (username, perm) in perms_to_add {
+            // Ignore users that don't exist
+            if sqlx::query(r#"SELECT * FROM users where id = $1;"#)
+                    .bind(username.clone()).fetch_one(&self.pool).await
+                    .is_err() {
+                continue;
+            }
+
+            // Owner perm boards: free to update any value
+            if allowed_board_ids_owner.len() > 0 {
+                sqlx::query(r#"INSERT INTO board.board_perms(board_id, user_id, perm_id)
+                        VALUES(unnest($1), $2, $3) ON CONFLICT (board_id, user_id) DO UPDATE SET
+                        perm_id = $3;"#)
+                    .bind(allowed_board_ids_owner.clone())
+                    .bind(username.clone())
+                    .bind(perm.perm_level.clone())
+                    .execute(&mut *tx).await?;
+            }
+        
+            // Edit board: cannot insert owner perm
+            if can_edit_users.len() > 0 && allowed_board_ids_edit.len() > 0 {
+                let mut new_perm = perm.clone();
+                if new_perm.perm_level == PermLevel::Owner { new_perm.perm_level = PermLevel::Edit; }
+
+                sqlx::query(r#"INSERT INTO board.board_perms(board_id, user_id, perm_id)
+                        VALUES(unnest($1), $2, $3) ON CONFLICT (board_id, user_id) DO UPDATE SET
+                        perm_id = $3;"#)
+                    .bind(allowed_board_ids_edit.clone()).bind(can_edit_users.clone())
+                    .bind(new_perm.perm_level.clone())
+                    .execute(&mut *tx).await?;
+            }
+        }
+
+        // Delete permissions
+        if allowed_board_ids_owner.len() > 0 && users_to_delete.len() > 0 {
+            sqlx::query(r#"DELETE FROM board.board_perms USING board.boards t1 WHERE user_id != t1.creator_id AND t1.id = board_id AND board_id = ANY($1) AND user_id = ANY($2);"#)
+                .bind(allowed_board_ids_owner.clone()).bind(users_to_delete.clone())
+                .execute(&mut *tx).await?;
+        }
+        if allowed_board_ids_edit.len() > 0 && users_to_delete.len() > 0 && can_edit_users.len() > 0 {
+            sqlx::query(r#"DELETE FROM board.board_perms USING board.boards t1 WHERE user_id != t1.creator_id AND t1.id = board_id AND board_id = ANY($1) AND user_id = ANY($2) AND user_id = ANY($3);"#)
+                .bind(allowed_board_ids_edit.clone()).bind(users_to_delete.clone()).bind(can_edit_users.clone())
+                .execute(&mut *tx).await?;
+        }
+
+        // Ensure board creator always has owner perm
+        if allowed_board_ids_owner.len() > 0 {
+            sqlx::query(r#"UPDATE board.board_perms SET perm_id = $2 FROM board.boards
+                WHERE creator_id = user_id AND id = board_id AND board_id = ANY($1);"#)
+                .bind(allowed_board_ids_owner.clone()).bind(PermLevel::Owner)
+                .execute(&mut *tx).await?;
+        }
+        if allowed_board_ids_edit.len() > 0 {
+            sqlx::query(r#"UPDATE board.board_perms SET perm_id = $2 FROM board.boards
+                WHERE creator_id = user_id AND id = board_id AND board_id = ANY($1);"#)
+                .bind(allowed_board_ids_edit.clone()).bind(PermLevel::Owner)
+                .execute(&mut *tx).await?;
+        }
+        tx.commit().await?;
+
+        Ok((allowed_board_ids_edit.len() + allowed_board_ids_owner.len()) as i32)
+    }
 
 
     // --------------- Pins ----------------------

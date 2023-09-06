@@ -1,10 +1,10 @@
 use crate::board::handlers::postgres_handler::PostgresHandler;
 use crate::shared::types::app::{ErrorResponse, Response, login_fail, no_update_permission, no_view_permission};
 use crate::shared::types::account::{Perm, PermLevel, Account};
-use crate::board::types::board::{SortBoard, Board};
+use crate::board::types::board::{SortBoard, Board, MassBoardShareUser};
 use crate::board::types::pin::{PinFlags, PinType, Pin, SortPin};
 
-use actix_identity::{Identity};
+use actix_identity::Identity;
 use actix_web::{
     get, post, put, delete, HttpResponse, web::{self, Data},
     HttpMessage as _, HttpRequest, Result
@@ -204,6 +204,70 @@ async fn get_board(handler: Data<PostgresHandler>, identity: Option<Identity>, p
                 ErrorResponse{ error: "Failed to get board".to_string() }))
     };
 }
+
+
+// Get board perms
+#[derive(Deserialize)]
+struct GetBoardPermForm {
+    board_ids: Vec<Uuid>
+}
+
+#[derive(Serialize)]
+struct GetBoardPermReturn {
+    perms: HashMap<String, MassBoardShareUser>
+}
+
+#[post("/v1/board/boards/perms/bulk")]
+async fn bulk_get_board_perms(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Json<GetBoardPermForm>) -> Result<HttpResponse> {
+    if let Some(identity) = identity {
+        let logged_in_id = identity.id().unwrap().to_owned();
+
+        return match handler
+            .get_mass_board_share_perms(
+                logged_in_id.as_str(),
+                &params.board_ids
+            ).await {
+                Ok(result) => Ok(HttpResponse::Ok().json(GetBoardPermReturn { perms: result })),
+                Err(_err) => Ok(HttpResponse::InternalServerError().json(
+                    ErrorResponse{ error: "Failed to get perms for boards".to_string() }))
+        };
+    }
+    login_fail!();
+}
+
+// Get board perms
+#[derive(Deserialize)]
+struct UpdateBoardPermForm {
+    board_ids: Vec<Uuid>,
+    perms_to_add: HashMap<String, Perm>,
+    users_to_delete: Vec<String>
+}
+
+#[derive(Serialize)]
+struct UpdateBoardPermReturn {
+    updated: i32
+}
+
+#[put("/v1/board/boards/perms/bulk")]
+async fn bulk_update_board_perms(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Json<UpdateBoardPermForm>) -> Result<HttpResponse> {
+    if let Some(identity) = identity {
+        let logged_in_id = identity.id().unwrap().to_owned();
+
+        return match handler
+            .mass_change_board_share_perms(
+                logged_in_id.as_str(),
+                &params.board_ids,
+                &params.perms_to_add,
+                &params.users_to_delete
+            ).await {
+                Ok(result) => Ok(HttpResponse::Ok().json(UpdateBoardPermReturn { updated: result })),
+                Err(_err) => Ok(HttpResponse::InternalServerError().json(
+                    ErrorResponse{ error: "Failed to update perms for boards".to_string() }))
+        };
+    }
+    login_fail!();
+}
+
 
 
 
