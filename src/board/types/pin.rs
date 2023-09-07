@@ -4,6 +4,8 @@ use serde::{Serialize, Deserialize};
 use chrono::Utc;
 use num_derive::FromPrimitive;
 
+use crate::shared::types::account::UserId;
+
 #[derive(Clone, Serialize, Deserialize)]
 #[derive(FromPrimitive)]
 pub enum PinType {
@@ -55,4 +57,21 @@ impl std::fmt::Display for SortPin {
             SortPin::Edited => write!(f, "edited"),
         }
     }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct PinHistoryAbridged {
+    pub editor: String,
+    pub time: chrono::DateTime<Utc>,
+    pub id: i32
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct PinHistory {
+    pub editor: String,
+    pub time: chrono::DateTime<Utc>,
+    pub content: String,
+    pub flags: PinFlags,
+    pub attachment_paths: Vec<String>,
+    pub metadata: Value
 }

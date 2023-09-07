@@ -2,7 +2,7 @@ use crate::board::handlers::postgres_handler::PostgresHandler;
 use crate::shared::types::app::{ErrorResponse, Response, login_fail, no_update_permission, no_view_permission};
 use crate::shared::types::account::{Perm, PermLevel, Account};
 use crate::board::types::board::{SortBoard, Board, MassBoardShareUser};
-use crate::board::types::pin::{PinFlags, PinType, Pin, SortPin};
+use crate::board::types::pin::{PinFlags, PinType, Pin, SortPin, PinHistory, PinHistoryAbridged};
 
 use actix_identity::Identity;
 use actix_web::{
@@ -338,6 +338,7 @@ async fn modify_pin(handler: Data<PostgresHandler>, identity: Option<Identity>, 
         };
 
         return match handler.modify_pin(
+            identity.id().unwrap().as_str(),
             &params.id,
             pin_type,
             &params.board_id,
@@ -575,6 +576,55 @@ async fn check_favorites(handler: Data<PostgresHandler>, identity: Option<Identi
             Ok(result) => Ok(HttpResponse::Ok().json(CheckFavoriteReturn { pins: result })),
             Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Failed to check favorites".to_string() }))
         };
+    }
+    login_fail!();
+}
+
+
+// Pin history preview
+#[derive(Deserialize)]
+struct PinHistoryPreviewForm {
+    pin_id: Uuid
+}
+
+#[derive(Serialize)]
+struct PinHistoryPreviewReturnForm {
+    history: Vec<PinHistoryAbridged>
+}
+
+#[derive(Deserialize)]
+struct PinHistoryForm {
+    pin_id: Uuid,
+    history_id: i32
+}
+
+#[derive(Serialize)]
+struct PinHistoryReturnForm {
+    history: Option<PinHistory>
+}
+
+#[get("/v1/board/pins/history/preview")]
+async fn get_pin_history_preview(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Query<PinHistoryPreviewForm>) -> Result<HttpResponse> {
+    if let Some(identity) = identity {
+        let logged_in_id = identity.id().unwrap().to_owned();
+        let result = handler.get_pin_history_preview(&params.pin_id, logged_in_id.as_str()).await;
+        if !result.is_ok() {
+            return Ok(HttpResponse::Ok().json(ErrorResponse { error: "Failed to fetch history preview".to_string() }));
+        }
+        return Ok(HttpResponse::Ok().json(PinHistoryPreviewReturnForm { history: result.unwrap() }));
+    }
+    login_fail!();
+}
+
+#[get("/v1/board/pins/history")]
+async fn get_pin_history(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Query<PinHistoryForm>) -> Result<HttpResponse> {
+    if let Some(identity) = identity {
+        let logged_in_id = identity.id().unwrap().to_owned();
+        let result = handler.get_pin_history(&params.pin_id, params.history_id, logged_in_id.as_str()).await;
+        if !result.is_ok() {
+            return Ok(HttpResponse::Ok().json(ErrorResponse { error: "Failed to fetch history".to_string() }));
+        }
+        return Ok(HttpResponse::Ok().json(PinHistoryReturnForm { history: result.unwrap() }));
     }
     login_fail!();
 }

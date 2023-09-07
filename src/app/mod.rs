@@ -64,7 +64,9 @@ fn routes(app: &mut web::ServiceConfig) {
         .service(board_app::add_favorites)
         .service(board_app::remove_favorites)
         .service(board_app::check_favorites)
-        
+        .service(board_app::get_pin_history_preview)
+        .service(board_app::get_pin_history)
+
         // Site
         .service(site_app::get_pin_preview)
         .service(site_app::download_site)

@@ -1,9 +1,10 @@
 use crate::shared::types::account::{UserId, Perm, PermLevel};
-use crate::board::types::pin;
+use crate::board::types::pin::{self, PinFlags};
 use crate::board::types::board;
 use crate::shared::util::config;
 use crate::shared::util::clean_html::clean_html;
 
+use actix_web::cookie::time::Duration;
 use chrono;
 use chrono::Utc;
 use uuid::Uuid;
@@ -76,6 +77,17 @@ impl PostgresHandler {
             user_id text NOT NULL REFERENCES users(id),
             pin_id uuid NOT NULL REFERENCES board.pins(id),
             UNIQUE(user_id, pin_id)
+        );"#).execute(&self.pool).await?;
+
+        sqlx::query(r#"CREATE TABLE IF NOT EXISTS board.pin_history (
+            id SERIAL PRIMARY KEY,
+            editor text NOT NULL REFERENCES users(id),
+            pin_id uuid NOT NULL REFERENCES board.pins(id),
+            content text NOT NULL,
+            time timestamptz NOT NULL,
+            flags integer NOT NULL,
+            attachment_paths text[],
+            metadata json
         );"#).execute(&self.pool).await?;
 
         Ok(())
@@ -225,12 +237,19 @@ impl PostgresHandler {
     }
 
     pub async fn delete_board(&self, board_id: &Uuid) -> Result<(), sqlx::Error> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query(r#"DELETE FROM board.favorites USING board.pins t1 WHERE t1.id = pin_id AND t1.board_id = $1;"#)
+            .bind(board_id).execute(&mut *tx).await?;
+        sqlx::query(r#"DELETE FROM board.pin_history USING board.pins t1 WHERE t1.id = pin_id AND t1.board_id = $1;"#)
+            .bind(board_id).execute(&mut *tx).await?;
+    
         sqlx::query(r#"DELETE FROM board.pins WHERE board_id = $1;"#)
-            .bind(board_id).execute(&self.pool).await?;
+            .bind(board_id).execute(&mut *tx).await?;
         sqlx::query(r#"DELETE FROM board.board_perms WHERE board_id = $1;"#)
-            .bind(board_id).execute(&self.pool).await?;
+            .bind(board_id).execute(&mut *tx).await?;
         sqlx::query("DELETE FROM board.boards WHERE id = $1;")
-            .bind(board_id).execute(&self.pool).await?;
+            .bind(board_id).execute(&mut *tx).await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -512,11 +531,16 @@ impl PostgresHandler {
         return Ok(self.get_pin(&id).await.unwrap());
     }
 
-    pub async fn modify_pin(&self, pin_id: &Uuid, pin_type: Option<pin::PinType>, board_id: &Option<Uuid>,
+    pub async fn modify_pin(&self, user_id: &UserId, pin_id: &Uuid, pin_type: Option<pin::PinType>, board_id: &Option<Uuid>,
             content: Option<String>, attachment_paths: Option<Vec<String>>, flags: Option<pin::PinFlags>, metadata: Option<Value>)
             -> Result<pin::Pin, sqlx::Error> {
         let mut p = self.get_pin(&pin_id).await.unwrap();
         p.edited = chrono::offset::Utc::now();
+
+        let original_content = p.content.clone();
+        let original_attachment_paths = p.attachment_paths.clone();
+        let original_flags = p.flags.clone();
+        let original_metadata = p.metadata.clone();
 
         update_if_not_none!(p, pin_type);
         update_if_not_none!(p, board_id);
@@ -529,25 +553,31 @@ impl PostgresHandler {
 
         let mut tx = self.pool.begin().await?;
         sqlx::query("UPDATE board.pins SET pin_type = $2, content = $3, edited = $4, flags = $5, attachment_paths = $6, metadata = $7 WHERE id = $1;")
-            .bind(pin_id).bind(p.pin_type as i16).bind(p.content).bind(p.edited)
-            .bind(p.flags.bits() as i32).bind(p.attachment_paths).bind(p.metadata)
+            .bind(pin_id).bind(p.pin_type as i16).bind(p.content.clone()).bind(p.edited)
+            .bind(p.flags.bits() as i32).bind(p.attachment_paths.clone()).bind(p.metadata.clone())
             .execute(&mut *tx).await?;
 
         tx.commit().await?;
+        self.add_to_pin_history(&p.pin_id, user_id,
+            &original_content, &original_attachment_paths, &original_flags, &original_metadata).await?;
+
         return Ok(self.get_pin(&pin_id).await.unwrap());
     }
 
     pub async fn delete_pin(&self, pin_id: &Uuid) -> Result<(), sqlx::Error> {
-        // Delete favorites that link to deleted pins
+        // Delete favorites + history that links to deleted pins
+        let mut tx = self.pool.begin().await?;
         sqlx::query("DELETE FROM board.favorites WHERE pin_id = $1;")
-            .bind(pin_id)
-            .execute(&self.pool).await?;
+            .bind(pin_id).execute(&mut *tx).await?;
+        sqlx::query("DELETE FROM board.pin_history WHERE pin_id = $1;")
+            .bind(pin_id).execute(&mut *tx).await?;
     
         let board_id = sqlx::query("DELETE FROM board.pins WHERE id = $1 returning board_id;")
-            .bind(pin_id).fetch_one(&self.pool).await?;
+            .bind(pin_id).fetch_one(&mut *tx).await?;
         let board_id = board_id.get::<Uuid, &str>("board_id");
         sqlx::query(r#"UPDATE board.boards SET pin_count = pin_count - 1 WHERE id = $1;"#)
-            .bind(board_id).execute(&self.pool).await?;
+            .bind(board_id).execute(&mut *tx).await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -620,6 +650,11 @@ impl PostgresHandler {
 
         let mut tx = self.pool.begin().await?;
         for pin_id in pin_ids {
+            sqlx::query("DELETE FROM board.pin_history WHERE pin_id = $1;")
+                .bind(pin_id).execute(&mut *tx).await?;
+            sqlx::query("DELETE FROM board.favorites WHERE pin_id = $1;")
+                .bind(pin_id).execute(&mut *tx).await?;
+
             let board_id = sqlx::query("DELETE FROM board.pins WHERE id = $1 returning board_id;")
                 .bind(pin_id).fetch_one(&mut *tx).await?;
             let board_id = board_id.get::<Uuid, &str>("board_id");
@@ -768,5 +803,79 @@ impl PostgresHandler {
             .bind(user).bind(pin_ids)
             .map(|row: PgRow| row.get::<Uuid, &str>("pin_id"))
             .fetch_all(&self.pool).await?)
+    }
+
+    pub async fn get_pin_history_preview(&self, pin_id: &Uuid, user: &UserId)
+             -> Result<Vec<pin::PinHistoryAbridged>, sqlx::Error> {
+        // Check if user has permission to view pin
+        let perm = self.get_perms_for_pin(user, pin_id).await;
+        if perm.is_none() { return Ok(Vec::new()); }
+
+        Ok(sqlx::query("SELECT * FROM board.pin_history WHERE pin_id = $1  ORDER BY time DESC LIMIT 200;")
+                .bind(pin_id)
+                .map(|row: PgRow| pin::PinHistoryAbridged {
+                    id: row.get::<i32, &str>("id"),
+                    editor: row.get::<String, &str>("editor"),
+                    time: row.get::<chrono::DateTime<Utc>, &str>("time")
+                })
+                .fetch_all(&self.pool).await?)
+    }
+
+    pub async fn get_pin_history(&self, pin_id: &Uuid, history_id: i32, user: &UserId)
+             -> Result<Option<pin::PinHistory>, sqlx::Error> {
+        // Check if user has permission to view pin
+        let perm = self.get_perms_for_pin(user, pin_id).await;
+        if perm.is_none() { return Ok(None); }
+
+        Ok(Some(sqlx::query("SELECT * FROM board.pin_history WHERE pin_id = $1 AND id = $2 ORDER BY time DESC LIMIT 1;")
+                .bind(pin_id).bind(history_id)
+                .map(|row: PgRow| pin::PinHistory {
+                    editor: row.get::<String, &str>("editor"),
+                    time: row.get::<chrono::DateTime<Utc>, &str>("time"),
+                    content: row.get::<String, &str>("content"),
+                    flags: pin::PinFlags::from_bits_truncate(row.get::<i32, &str>("flags") as u64),
+                    attachment_paths: row.get::<Option<Vec<String>>, &str>("attachment_paths").unwrap_or(Vec::new()),
+                    metadata: row.get::<Option<Value>, &str>("metadata").unwrap_or(serde_json::from_str("{}").unwrap())
+                })
+                .fetch_one(&self.pool).await?))
+    }
+
+    async fn add_to_pin_history(&self, pin_id: &Uuid, user: &UserId, content: &String,
+            attachments: &Vec<String>, flags: &PinFlags, metadata: &Value)
+            -> Result<(), sqlx::Error> {
+        // If last update was too recent and by the same user update previous entry
+        // then overwrite it instead of creating a new one
+        let mut update_instead = false;
+        let now = chrono::offset::Utc::now();
+
+        match sqlx::query("SELECT * FROM board.pin_history WHERE pin_id = $1 AND id IN(SELECT MAX(id) from board.pin_history);")
+                .bind(pin_id).fetch_one(&self.pool).await {
+            Ok(history) => {
+                update_instead = history.get::<String, &str>("editor") == user &&
+                    history.get::<chrono::DateTime<Utc>, &str>("time") > now - chrono::Duration::minutes(5);
+            },
+            Err(_err) => {}
+        }
+        if update_instead {
+            sqlx::query(r#"UPDATE board.pin_history
+                SET editor=$1, pin_id=$2, content=$3, time=$4, flags=$5, attachment_paths=$6, metadata=$7
+                WHERE id IN(SELECT MAX(id) from board.pin_history);"#)
+                .bind(user).bind(pin_id).bind(content).bind(now)
+                .bind(flags.bits() as i32).bind(attachments).bind(metadata)
+                .execute(&self.pool).await?;
+            return Ok(());
+        }
+
+        // Delete old history for this pin
+        sqlx::query("DELETE FROM board.pin_history WHERE pin_id = $1 AND
+                    id != all(array(SELECT id FROM board.pin_history WHERE pin_id = $1 ORDER BY time DESC LIMIT 100));")
+                .bind(pin_id).execute(&self.pool).await?;
+
+        sqlx::query(r#"INSERT INTO board.pin_history(editor, pin_id, content, time, flags, attachment_paths, metadata)
+            VALUES($1, $2, $3, $4, $5, $6, $7);"#)
+            .bind(user).bind(pin_id).bind(content).bind(now)
+            .bind(flags.bits() as i32).bind(attachments).bind(metadata)
+            .execute(&self.pool).await?;
+        Ok(())
     }
 }
