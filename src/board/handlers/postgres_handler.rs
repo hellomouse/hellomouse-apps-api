@@ -556,10 +556,13 @@ impl PostgresHandler {
             .bind(pin_id).bind(p.pin_type as i16).bind(p.content.clone()).bind(p.edited)
             .bind(p.flags.bits() as i32).bind(p.attachment_paths.clone()).bind(p.metadata.clone())
             .execute(&mut *tx).await?;
-
         tx.commit().await?;
-        self.add_to_pin_history(&p.pin_id, user_id,
-            &original_content, &original_attachment_paths, &original_flags, &original_metadata).await?;
+
+        if original_content != p.content || original_flags.bits() != p.flags.bits() || original_metadata != p.metadata ||
+                original_attachment_paths != p.attachment_paths {
+            self.add_to_pin_history(&p.pin_id, user_id,
+                &original_content, &original_attachment_paths, &original_flags, &original_metadata).await?;
+        }
 
         return Ok(self.get_pin(&pin_id).await.unwrap());
     }
