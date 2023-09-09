@@ -1,7 +1,7 @@
 use crate::board::handlers::postgres_handler::PostgresHandler;
 use crate::shared::types::app::{ErrorResponse, Response, login_fail, no_update_permission, no_view_permission};
 use crate::shared::types::account::{Perm, PermLevel, Account};
-use crate::board::types::board::{SortBoard, Board, MassBoardShareUser};
+use crate::board::types::board::{SortBoard, Board, MassBoardShareUser, Tag};
 use crate::board::types::pin::{PinFlags, PinType, Pin, SortPin, PinHistory, PinHistoryAbridged};
 
 use actix_identity::Identity;
@@ -581,7 +581,11 @@ async fn check_favorites(handler: Data<PostgresHandler>, identity: Option<Identi
 }
 
 
+
+
 // Pin history preview
+// -------------------------
+
 #[derive(Deserialize)]
 struct PinHistoryPreviewForm {
     pin_id: Uuid
@@ -625,6 +629,164 @@ async fn get_pin_history(handler: Data<PostgresHandler>, identity: Option<Identi
             return Ok(HttpResponse::Ok().json(ErrorResponse { error: "Failed to fetch history".to_string() }));
         }
         return Ok(HttpResponse::Ok().json(PinHistoryReturnForm { history: result.unwrap() }));
+    }
+    login_fail!();
+}
+
+
+
+
+
+// Tags
+// -------------------------
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct TagAbridged {
+    pub name: String,
+    pub id: i32,
+    pub color: String,
+    pub board_ids: Vec<Uuid>
+}
+
+
+#[derive(Deserialize)]
+struct TagWithIdForm {
+    id: i32
+}
+
+#[derive(Deserialize)]
+struct GetTagsForm {}
+
+#[derive(Serialize)]
+struct TagReturnForm {
+    tag: TagAbridged
+}
+
+#[derive(Serialize)]
+struct TagsReturnForm {
+    tags: Vec<TagAbridged>
+}
+
+#[get("/v1/board/tags/single")]
+async fn get_tag(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Query<TagWithIdForm>) -> Result<HttpResponse> {
+    if let Some(identity) = identity {
+        let logged_in_id = identity.id().unwrap().to_owned();
+        return match handler.get_tag(logged_in_id.as_str(), params.id).await {
+            Ok(result) => Ok(HttpResponse::Ok().json(TagReturnForm { tag: TagAbridged {
+                name: result.name,
+                id: result.id,
+                color: result.color,
+                board_ids: result.board_ids
+            }})),
+            Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error getting tag".to_string() }))
+        };
+    }
+    login_fail!();
+}
+
+#[get("/v1/board/tags")]
+async fn get_tags(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Query<GetTagsForm>) -> Result<HttpResponse> {
+    if let Some(identity) = identity {
+        let logged_in_id = identity.id().unwrap().to_owned();
+        return match handler.get_tags(logged_in_id.as_str()).await {
+            Ok(result) => Ok(HttpResponse::Ok().json(TagsReturnForm {
+                tags: result.into_iter()
+                    .map(|r| TagAbridged {
+                        name: r.name,
+                        id: r.id,
+                        color: r.color,
+                        board_ids: r.board_ids
+                    })
+                    .collect::<Vec<TagAbridged>>()
+            })),
+            Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error getting tag".to_string() }))
+        };
+    }
+    login_fail!();
+}
+
+#[derive(Deserialize)]
+struct CreateTagForm {
+    name: String,
+    color: String,
+    board_ids: Vec<Uuid>
+}
+
+#[post("/v1/board/tags")]
+async fn create_tag(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Json<CreateTagForm>) -> Result<HttpResponse> {
+    if let Some(identity) = identity {
+        let logged_in_id = identity.id().unwrap().to_owned();
+        return match handler.create_tag(logged_in_id.as_str(), params.name.as_str(), params.color.as_str(), &params.board_ids).await {
+            Ok(result) => Ok(HttpResponse::Ok().json(Response { msg: "Tag created".to_string() })),
+            Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error creating tag".to_string() }))
+        };
+    }
+    login_fail!();
+}
+
+#[derive(Deserialize)]
+struct ModifyTagForm {
+    id: i32,
+    name: Option<String>,
+    color: Option<String>,
+    board_ids: Option<Vec<Uuid>>
+}
+
+#[put("/v1/board/tags")]
+async fn modify_tag(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Json<ModifyTagForm>) -> Result<HttpResponse> {
+    if let Some(identity) = identity {
+        let logged_in_id = identity.id().unwrap().to_owned();
+        return match handler.modify_tag(
+                logged_in_id.as_str(),
+                params.id,
+                params.name.clone(),
+                params.color.clone(),
+                params.board_ids.clone()
+            ).await {
+            Ok(result) => Ok(HttpResponse::Ok().json(Response { msg: "Tag updated".to_string() })),
+            Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error updating tag".to_string() }))
+        };
+    }
+    login_fail!();
+}
+
+#[derive(Deserialize)]
+struct AddRemoveBoardTagForm {
+    id: i32,
+    board_ids_to_delete: Vec<Uuid>,
+    board_ids_to_add: Vec<Uuid>
+}
+
+#[put("/v1/board/tags/boards")]
+async fn add_remove_board_tag(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Json<AddRemoveBoardTagForm>) -> Result<HttpResponse> {
+    if let Some(identity) = identity {
+        let logged_in_id = identity.id().unwrap().to_owned();
+        return match handler.tag_add_remove_boards(
+                logged_in_id.as_str(),
+                params.id,
+                &params.board_ids_to_add,
+                &params.board_ids_to_delete
+            ).await {
+            Ok(result) => Ok(HttpResponse::Ok().json(Response { msg: "Tag updated".to_string() })),
+            Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error updating tag".to_string() }))
+        };
+    }
+    login_fail!();
+}
+
+#[derive(Deserialize)]
+struct DeleteTagsForm {
+    ids: Vec<i32>
+}
+
+#[delete("/v1/board/tags")]
+async fn delete_tags(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Json<DeleteTagsForm>) -> Result<HttpResponse> {
+    if let Some(identity) = identity {
+        let logged_in_id = identity.id().unwrap().to_owned();
+        return match handler.delete_tags(logged_in_id.as_str(), &params.ids).await {
+            Ok(result) => Ok(HttpResponse::Ok().json(Response { msg: "Tag deleted".to_string() })),
+            Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error deleting tag".to_string() }))
+        };
     }
     login_fail!();
 }

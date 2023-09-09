@@ -7,7 +7,7 @@ use crate::shared::util::clean_html::clean_html;
 use actix_web::cookie::time::Duration;
 use chrono;
 use chrono::Utc;
-use uuid::Uuid;
+use uuid::{Uuid, uuid};
 use std::collections::{HashMap, HashSet};
 use std::cmp;
 use serde_json::Value;
@@ -90,6 +90,19 @@ impl PostgresHandler {
             metadata json
         );"#).execute(&self.pool).await?;
 
+        sqlx::query(r#"CREATE TABLE IF NOT EXISTS board.tags (
+            id SERIAL PRIMARY KEY,
+            name text NOT NULL CHECK(length(name) < 60),
+            color text NOT NULL CHECK(color ~* '^#[a-fA-F0-9]{6}$'),
+            creator_id text NOT NULL REFERENCES users(id),
+            name_lower TEXT GENERATED ALWAYS AS (LOWER (name)) STORED
+        );"#).execute(&self.pool).await?;
+
+        sqlx::query(r#"CREATE TABLE IF NOT EXISTS board.tag_ids (
+            id integer NOT NULL REFERENCES board.tags(id),
+            board_id uuid NOT NULL REFERENCES board.boards(id)
+        );"#).execute(&self.pool).await?;
+
         Ok(())
     }
 
@@ -119,7 +132,7 @@ impl PostgresHandler {
         }
     }
 
-    pub async fn create_board(&self, name: String, creator_id: &str, desc: String, color: String, perms: HashMap<String, Perm>)
+    pub async fn create_board(&self, name: String, creator_id: &UserId, desc: String, color: String, perms: HashMap<String, Perm>)
             -> Result<board::Board, sqlx::Error> {
         let mut id: Uuid;
         loop {
@@ -241,6 +254,8 @@ impl PostgresHandler {
         sqlx::query(r#"DELETE FROM board.favorites USING board.pins t1 WHERE t1.id = pin_id AND t1.board_id = $1;"#)
             .bind(board_id).execute(&mut *tx).await?;
         sqlx::query(r#"DELETE FROM board.pin_history USING board.pins t1 WHERE t1.id = pin_id AND t1.board_id = $1;"#)
+            .bind(board_id).execute(&mut *tx).await?;
+        sqlx::query(r#"DELETE FROM board.tag_ids WHERE board_id = $1;"#)
             .bind(board_id).execute(&mut *tx).await?;
     
         sqlx::query(r#"DELETE FROM board.pins WHERE board_id = $1;"#)
@@ -880,5 +895,116 @@ impl PostgresHandler {
             .bind(flags.bits() as i32).bind(attachments).bind(metadata)
             .execute(&self.pool).await?;
         Ok(())
+    }
+
+    pub async fn get_tag(&self, creator_id: &UserId, id: i32)
+            -> Result<board::Tag, sqlx::Error> {
+        let board_ids = sqlx::query("SELECT * FROM board.tag_ids WHERE id = $1;")
+            .bind(id).map(|b: PgRow| b.get::<Uuid, &str>("board_id"))
+            .fetch_all(&self.pool).await?;
+
+        Ok(sqlx::query("SELECT * FROM board.tags WHERE id = $1 AND creator_id = $2;")
+            .bind(id).bind(creator_id)
+            .map(|b: PgRow| board::Tag {
+                creator_id: b.get::<String, &str>("creator_id"),
+                name: b.get::<String, &str>("name"),
+                id: b.get::<i32, &str>("id"),
+                color: b.get::<String, &str>("color"),
+                board_ids: board_ids.clone()
+            })
+            .fetch_one(&self.pool).await?)
+    }
+
+    pub async fn get_tags(&self, creator_id: &UserId)
+            -> Result<Vec<board::Tag>, sqlx::Error> {
+        let mut tags = sqlx::query("SELECT * FROM board.tags WHERE creator_id = $1 ORDER BY name_lower ASC LIMIT 200;")
+                .bind(creator_id)
+                .map(|b: PgRow| board::Tag {
+                    creator_id: b.get::<String, &str>("creator_id"),
+                    name: b.get::<String, &str>("name"),
+                    id: b.get::<i32, &str>("id"),
+                    color: b.get::<String, &str>("color"),
+                    board_ids: Vec::new()
+                })
+                .fetch_all(&self.pool).await?;
+
+        let tag_ids: Vec<i32> = tags.clone().into_iter().map(|x| x.id).collect();
+        for (i, tag_id) in tag_ids.iter().enumerate() {
+            tags[i].board_ids = sqlx::query("SELECT * FROM board.tag_ids WHERE id = $1;")
+                .bind(tag_id).map(|b: PgRow| b.get::<Uuid, &str>("board_id"))
+                .fetch_all(&self.pool).await?
+        }
+
+        Ok(tags)
+    }
+
+    pub async fn create_tag(&self, creator_id: &UserId, name: &str, color: &str, board_ids: &Vec<Uuid>)
+            -> Result<(), sqlx::Error> {
+        let id = sqlx::query(r#"INSERT INTO board.tags(name, color, creator_id) VALUES($1, $2, $3) RETURNING id;"#)
+            .bind(name).bind(color).bind(creator_id)
+            .fetch_one(&self.pool).await?;
+
+        sqlx::query(r#"INSERT INTO board.tag_ids(id, board_id) VALUES($1, unnest($2));"#)
+            .bind(id.get::<i32, &str>("id")).bind(board_ids)
+            .execute(&self.pool).await?;
+
+        return Ok(());
+    }
+
+    pub async fn modify_tag(&self, creator_id: &UserId, id: i32, name: Option<String>, color: Option<String>, board_ids: Option<Vec<Uuid>>)
+            -> Result<(), sqlx::Error> {
+        let tag = self.get_tag(creator_id, id).await?;
+
+        // Check if user is allowed to modify this id
+        if tag.creator_id != creator_id { return Ok(()); }
+        
+        let board_ids = board_ids.unwrap_or(tag.board_ids);
+        let name = name.unwrap_or(tag.name);
+        let color = color.unwrap_or(tag.color);
+
+        sqlx::query(r#"UPDATE board.tags SET name = $1, color = $2 WHERE id = $3"#)
+            .bind(name).bind(color).bind(id)
+            .execute(&self.pool).await?;
+        sqlx::query(r#"DELETE FROM board.tag_ids WHERE id = $1;"#)
+            .bind(id).execute(&self.pool).await?;
+        sqlx::query(r#"INSERT INTO board.tag_ids(id, board_id) VALUES($1, unnest($2));"#)
+            .bind(id).bind(board_ids)
+            .execute(&self.pool).await?;
+
+        return Ok(());
+    }
+
+    pub async fn tag_add_remove_boards(&self, creator_id: &UserId, id: i32, board_ids_to_add: &Vec<Uuid>, board_ids_to_delete: &Vec<Uuid>)
+            -> Result<(), sqlx::Error> {
+        let tag = self.get_tag(creator_id, id).await?;
+
+        // Check if user is allowed to modify this id
+        if tag.creator_id != creator_id { return Ok(()); }
+
+        if board_ids_to_delete.len() > 0 { 
+            sqlx::query(r#"DELETE FROM board.tag_ids WHERE id = $1 AND board_id = ANY($1);"#)
+                .bind(id).bind(board_ids_to_delete).execute(&self.pool).await?;
+        }
+        if board_ids_to_add.len() > 0 {
+            sqlx::query(r#"INSERT INTO board.tag_ids(id, board_id) VALUES($1, unnest($2));"#)
+                .bind(id).bind(board_ids_to_add).execute(&self.pool).await?;
+        }
+
+        return Ok(());
+    }
+
+    pub async fn delete_tags(&self, creator_id: &UserId, ids: &Vec<i32>)
+            -> Result<(), sqlx::Error> {
+        // Filter ids by ones the user created
+        let allowed_tag_ids = sqlx::query("SELECT DISTINCT id FROM board.tags WHERE creator_id = $1 AND id = ANY($2) LIMIT 200;")
+                .bind(creator_id).bind(ids)
+                .map(|row: PgRow| row.get::<i32, &str>("id"))
+                .fetch_all(&self.pool).await?;
+
+        sqlx::query(r#"DELETE FROM board.tag_ids WHERE id = ANY($1);"#)
+            .bind(allowed_tag_ids.clone()).execute(&self.pool).await?;
+        sqlx::query(r#"DELETE FROM board.tags WHERE id = ANY($1);"#)
+            .bind(allowed_tag_ids).execute(&self.pool).await?;
+        return Ok(());
     }
 }
