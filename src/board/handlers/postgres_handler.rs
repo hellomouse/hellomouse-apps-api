@@ -974,6 +974,20 @@ impl PostgresHandler {
         return Ok(());
     }
 
+    pub async fn mass_edit_tag_colors(&self, user: &UserId, tag_ids: &Vec<i32>, new_color: &String)
+            -> Result<(), sqlx::Error> {
+        // Limit tag id count to 200
+        let end = std::cmp::min(200, tag_ids.len());
+        let tag_ids = &tag_ids[0..end];
+
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("UPDATE board.tags SET color = $1 WHERE id = ANY($2) AND creator_id = $3;")
+            .bind(new_color).bind(tag_ids).bind(user)
+            .execute(&mut *tx).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     pub async fn tag_add_remove_boards(&self, creator_id: &UserId, id: i32, board_ids_to_add: &Vec<Uuid>, board_ids_to_delete: &Vec<Uuid>)
             -> Result<(), sqlx::Error> {
         let tag = self.get_tag(creator_id, id).await?;
@@ -982,7 +996,7 @@ impl PostgresHandler {
         if tag.creator_id != creator_id { return Ok(()); }
 
         if board_ids_to_delete.len() > 0 { 
-            sqlx::query(r#"DELETE FROM board.tag_ids WHERE id = $1 AND board_id = ANY($1);"#)
+            sqlx::query(r#"DELETE FROM board.tag_ids WHERE id = $1 AND board_id = ANY($2);"#)
                 .bind(id).bind(board_ids_to_delete).execute(&self.pool).await?;
         }
         if board_ids_to_add.len() > 0 {

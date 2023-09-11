@@ -774,6 +774,30 @@ async fn add_remove_board_tag(handler: Data<PostgresHandler>, identity: Option<I
     login_fail!();
 }
 
+
+// Bulk change board colors
+#[derive(Deserialize)]
+struct BulkModifyTagColorsForm {
+    tag_ids: Vec<i32>,
+    color: String
+}
+
+#[put("/v1/board/tags/bulk_colors")]
+async fn bulk_modify_tag_colors(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Json<BulkModifyTagColorsForm>) -> Result<HttpResponse> {
+    if let Some(identity) = identity {
+        let id_username = identity.id().unwrap();
+        return match handler.mass_edit_tag_colors(
+                &id_username,
+                &params.tag_ids,
+                &params.color
+            ).await {
+            Ok(_) => Ok(HttpResponse::Ok().json(Response { msg: "Colors changed".to_string() })),
+            Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error editing tags".to_string() }))
+        };
+    }
+    login_fail!();
+}
+
 #[derive(Deserialize)]
 struct DeleteTagsForm {
     ids: Vec<i32>
