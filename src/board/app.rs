@@ -708,15 +708,14 @@ async fn get_tags(handler: Data<PostgresHandler>, identity: Option<Identity>, pa
 #[derive(Deserialize)]
 struct CreateTagForm {
     name: String,
-    color: String,
-    board_ids: Vec<Uuid>
+    color: String
 }
 
 #[post("/v1/board/tags")]
 async fn create_tag(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Json<CreateTagForm>) -> Result<HttpResponse> {
     if let Some(identity) = identity {
         let logged_in_id = identity.id().unwrap().to_owned();
-        return match handler.create_tag(logged_in_id.as_str(), params.name.as_str(), params.color.as_str(), &params.board_ids).await {
+        return match handler.create_tag(logged_in_id.as_str(), params.name.as_str(), params.color.as_str()).await {
             Ok(result) => Ok(HttpResponse::Ok().json(Response { msg: "Tag created".to_string() })),
             Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error creating tag".to_string() }))
         };

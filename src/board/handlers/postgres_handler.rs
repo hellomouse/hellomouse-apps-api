@@ -938,14 +938,10 @@ impl PostgresHandler {
         Ok(tags)
     }
 
-    pub async fn create_tag(&self, creator_id: &UserId, name: &str, color: &str, board_ids: &Vec<Uuid>)
+    pub async fn create_tag(&self, creator_id: &UserId, name: &str, color: &str)
             -> Result<(), sqlx::Error> {
-        let id = sqlx::query(r#"INSERT INTO board.tags(name, color, creator_id) VALUES($1, $2, $3) RETURNING id;"#)
+        sqlx::query(r#"INSERT INTO board.tags(name, color, creator_id) VALUES($1, $2, $3);"#)
             .bind(name).bind(color).bind(creator_id)
-            .fetch_one(&self.pool).await?;
-
-        sqlx::query(r#"INSERT INTO board.tag_ids(id, board_id) VALUES($1, unnest($2));"#)
-            .bind(id.get::<i32, &str>("id")).bind(board_ids)
             .execute(&self.pool).await?;
 
         return Ok(());
