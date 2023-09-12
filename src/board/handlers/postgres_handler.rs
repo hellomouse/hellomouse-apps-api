@@ -957,6 +957,22 @@ impl PostgresHandler {
         return Ok(());
     }
 
+    pub async fn move_board_tag(&self, creator_id: &UserId, board_id: &Uuid, to_tag_id: i32)
+            -> Result<(), sqlx::Error> {
+        // Check if user is allowed to modify this id
+        let tag = self.get_tag(creator_id, to_tag_id).await?;
+        if tag.creator_id != creator_id { return Ok(()); }
+
+        sqlx::query(r#"INSERT INTO board.tag_ids(id, board_id) VALUES($1, $2);"#)
+            .bind(to_tag_id).bind(board_id)
+            .execute(&self.pool).await?;
+        sqlx::query(r#"DELETE FROM board.tag_ids WHERE id != $1 AND board_id = $2;"#)
+            .bind(to_tag_id).bind(board_id)
+            .execute(&self.pool).await?;
+
+        return Ok(());
+    }
+
     pub async fn modify_tag(&self, creator_id: &UserId, id: i32, name: Option<String>, color: Option<String>, board_ids: Option<Vec<Uuid>>)
             -> Result<(), sqlx::Error> {
         let tag = self.get_tag(creator_id, id).await?;

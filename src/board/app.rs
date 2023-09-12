@@ -815,3 +815,21 @@ async fn delete_tags(handler: Data<PostgresHandler>, identity: Option<Identity>,
     }
     login_fail!();
 }
+
+#[derive(Deserialize)]
+struct MoveBoardTagForm {
+    to_tag_id: i32,
+    board_id: Uuid
+}
+
+#[post("/v1/board/tags/move")]
+async fn move_board_tag(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Json<MoveBoardTagForm>) -> Result<HttpResponse> {
+    if let Some(identity) = identity {
+        let logged_in_id = identity.id().unwrap().to_owned();
+        return match handler.move_board_tag(logged_in_id.as_str(), &params.board_id, params.to_tag_id).await {
+            Ok(result) => Ok(HttpResponse::Ok().json(Response { msg: "Board moved".to_string() })),
+            Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error moving board".to_string() }))
+        };
+    }
+    login_fail!();
+}

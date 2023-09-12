@@ -74,6 +74,7 @@ fn routes(app: &mut web::ServiceConfig) {
         .service(board_app::modify_tag)
         .service(board_app::add_remove_board_tag)
         .service(board_app::bulk_modify_tag_colors)
+        .service(board_app::move_board_tag)
         .service(board_app::delete_tags)
 
         // Site
