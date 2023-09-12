@@ -24,7 +24,8 @@ struct CreateBoardForm {
     name: String,
     desc: String,
     color: String,
-    perms: HashMap<String, Perm>
+    perms: HashMap<String, Perm>,
+    tag_id: Option<i32>
 }
 
 #[derive(Serialize)]
@@ -40,7 +41,8 @@ async fn create_board(handler: Data<PostgresHandler>, identity: Option<Identity>
             identity.id().unwrap().as_str(),
             params.desc.clone(),
             params.color.clone(),
-            params.perms.clone()
+            params.perms.clone(),
+            params.tag_id.clone()
         ).await {
             Ok(result) => Ok(HttpResponse::Ok().json(ResponseWithId { id: result.id })),
             Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error creating board".to_string() }))

@@ -132,7 +132,8 @@ impl PostgresHandler {
         }
     }
 
-    pub async fn create_board(&self, name: String, creator_id: &UserId, desc: String, color: String, perms: HashMap<String, Perm>)
+    pub async fn create_board(&self, name: String, creator_id: &UserId, desc: String, color: String,
+            perms: HashMap<String, Perm>, tag_id: Option<i32>)
             -> Result<board::Board, sqlx::Error> {
         let mut id: Uuid;
         loop {
@@ -148,6 +149,15 @@ impl PostgresHandler {
             VALUES($1, $2, $3, $4, $5, $6, $7, 0);"#)
             .bind(id).bind(name).bind(desc).bind(creator_id).bind(color).bind(created).bind(edited)
             .execute(&mut *tx).await?;
+
+        if tag_id.is_some() {
+            let tag = self.get_tag(creator_id, tag_id.unwrap()).await?;
+            if tag.creator_id == creator_id {
+                sqlx::query(r#"INSERT INTO board.tag_ids(id, board_id) VALUES($1, $2);"#)
+                    .bind(tag_id.unwrap()).bind(id)
+                    .execute(&mut *tx).await?;
+            }
+        }
 
         // Creator gets owner permission by default
         sqlx::query(r#"INSERT INTO board.board_perms(board_id, user_id, perm_id) VALUES($1, $2, $3);"#)
