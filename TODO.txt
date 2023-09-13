@@ -9,10 +9,6 @@ config:
 
 limit password length
 
-pin interact endpoint
-
-avoid &String
-
 limit login attempts
 
 on timeout - instead of rejecting the request, return timeout
@@ -33,7 +29,6 @@ https://datatracker.ietf.org/doc/html/rfc7617
 https://www.lpalmieri.com/posts/password-authentication-in-rust/
 https://libpasta.github.io/introduction/basic-usage/
 
-make parameter names all good, like create_account
 
 tags or hashtags for notes
 - detect hashtags and allow sorting by

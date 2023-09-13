@@ -25,18 +25,7 @@ impl WebHandler {
         sqlx::query(format!("CREATE SCHEMA IF NOT EXISTS site AUTHORIZATION {};", config::get_config().database.user).as_str())
             .execute(&self.pool).await?;
 
-        // Create site work queue db
-        sqlx::query(r#"
-        CREATE TABLE IF NOT EXISTS site.queue (
-            id uuid primary key unique,
-            created timestamptz NOT NULL,
-            name text NOT NULL CHECK(length(data) < 512),
-            data text NOT NULL CHECK(length(data) < 4096),
-            requestor text NOT NULL,
-            priority integer NOT NULL
-        );"#).execute(&self.pool).await?;
-
-        // Create site completed work table
+        // Create site queue / completed work table
         sqlx::query(r#"
         CREATE TABLE IF NOT EXISTS site.status (
             id uuid primary key unique,
@@ -55,10 +44,6 @@ impl WebHandler {
         let now = chrono::offset::Utc::now();
         let uuid = Uuid::new_v4();
 
-        sqlx::query("INSERT INTO site.queue VALUES($1, $2, $3, $4, $5, $6);")
-            .bind(uuid).bind(now).bind(cmd).bind(data)
-            .bind(user.to_string()).bind(priority)
-            .execute(&self.pool).await?;
         sqlx::query("INSERT INTO site.status VALUES($1, $2, $3, $4, $5, $6, $7, $8);")
             .bind(uuid).bind(now).bind(now).bind(cmd).bind(data)
             .bind(user.to_string()).bind(priority).bind("queued")
