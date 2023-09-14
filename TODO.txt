@@ -2,8 +2,6 @@ note: json merge will keep old keys, maybe just overwrite and keep defaults?
 
 safe cors
 
-limit size of metadata and settings jsons
-
 config:
     limit board counts
 

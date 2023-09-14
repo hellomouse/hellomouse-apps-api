@@ -3,9 +3,8 @@ use actix_session::{config::PersistentSession, storage::CookieSessionStore, Sess
 use actix_web::{
     get, post, HttpResponse, web::{self, Data},
     cookie::{time::Duration, Key, SameSite},
-    error,
     http::StatusCode,
-    middleware, App, HttpMessage as _, HttpRequest, HttpServer, Responder, Result
+    middleware, App, HttpServer, Result
 };
 use actix_cors::Cors;
 use actix_extensible_rate_limit::{RateLimiter};

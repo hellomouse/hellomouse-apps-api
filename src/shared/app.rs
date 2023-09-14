@@ -105,7 +105,7 @@ struct BatchUserParams { ids: String }
 async fn users_batch(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Query<BatchUserParams>) -> Result<HttpResponse> {
     if identity.is_some() {
         let ids = params.ids.split(',').map(|s| s.to_string()).collect();
-        return match handler.get_users_batch(ids).await {
+        return match handler.get_users_batch(&ids).await {
             Ok(result) => Ok(HttpResponse::Ok().json(UserSearchParamsReturn { users: result })),
             Err(_err) => Ok(HttpResponse::Forbidden().json(ErrorResponse{ error: "Could not get users".to_string() }))
         };

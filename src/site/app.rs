@@ -5,7 +5,7 @@ use crate::site::types::status::Job;
 
 use actix_identity::Identity;
 use actix_web::{
-    get, post, put, HttpResponse, web::{self, Data},
+    get, post, HttpResponse, web::{self, Data},
     Result
 };
 

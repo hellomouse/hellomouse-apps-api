@@ -4,8 +4,6 @@ use serde::{Serialize, Deserialize};
 use chrono::Utc;
 use num_derive::FromPrimitive;
 
-use crate::shared::types::account::UserId;
-
 #[derive(Clone, Serialize, Deserialize)]
 #[derive(FromPrimitive)]
 pub enum PinType {

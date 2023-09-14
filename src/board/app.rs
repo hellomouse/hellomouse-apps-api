@@ -1,16 +1,14 @@
 use crate::board::handlers::postgres_handler::PostgresHandler;
 use crate::shared::types::app::{ErrorResponse, Response, login_fail, no_update_permission, no_view_permission};
-use crate::shared::types::account::{Perm, PermLevel, Account};
-use crate::board::types::board::{SortBoard, Board, MassBoardShareUser, Tag};
-use crate::board::types::pin::{PinFlags, PinType, Pin, SortPin, PinHistory, PinHistoryAbridged};
+use crate::shared::types::account::{Perm, PermLevel};
+use crate::board::types::board::{SortBoard, Board, MassBoardShareUser};
+use crate::board::types::pin::{PinFlags, Pin, SortPin, PinHistory, PinHistoryAbridged};
 
 use actix_identity::Identity;
 use actix_web::{
-    get, post, put, delete, HttpResponse, web::{self, Data},
-    HttpMessage as _, HttpRequest, Result
+    get, post, put, delete, HttpResponse, web::{self, Data}, Result
 };
 
-use std::sync::Mutex;
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -37,10 +35,10 @@ struct ResponseWithId {
 async fn create_board(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Json<CreateBoardForm>) -> Result<HttpResponse> {
     if let Some(identity) = identity {
         return match handler.create_board(
-            params.name.clone(),
+            params.name.as_str(),
             identity.id().unwrap().as_str(),
-            params.desc.clone(),
-            params.color.clone(),
+            params.desc.as_str(),
+            params.color.as_str(),
             params.perms.clone(),
             params.tag_id.clone()
         ).await {
@@ -77,7 +75,7 @@ async fn update_board(handler: Data<PostgresHandler>, identity: Option<Identity>
                 (board.perms.get(&id_username).unwrap().perm_level == PermLevel::Owner ||
                  board.perms.get(&id_username).unwrap().perm_level == PermLevel::Edit) {
             return match handler.modify_board(
-                id_username,
+                &id_username,
                 &params.id,
                 params.name.clone(),
                 params.desc.clone(),
@@ -137,7 +135,7 @@ async fn bulk_modify_board_colors(handler: Data<PostgresHandler>, identity: Opti
         return match handler.mass_edit_board_colors(
                 &id_username,
                 params.board_ids.clone(),
-                &params.color
+                params.color.as_str()
             ).await {
             Ok(_) => Ok(HttpResponse::Ok().json(Response { msg: "Colors changed".to_string() })),
             Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error editing boards".to_string() }))
@@ -687,7 +685,7 @@ async fn get_tag(handler: Data<PostgresHandler>, identity: Option<Identity>, par
 }
 
 #[get("/v1/board/tags")]
-async fn get_tags(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Query<GetTagsForm>) -> Result<HttpResponse> {
+async fn get_tags(handler: Data<PostgresHandler>, identity: Option<Identity>, _params: web::Query<GetTagsForm>) -> Result<HttpResponse> {
     if let Some(identity) = identity {
         let logged_in_id = identity.id().unwrap().to_owned();
         return match handler.get_tags(logged_in_id.as_str()).await {
@@ -718,7 +716,7 @@ async fn create_tag(handler: Data<PostgresHandler>, identity: Option<Identity>, 
     if let Some(identity) = identity {
         let logged_in_id = identity.id().unwrap().to_owned();
         return match handler.create_tag(logged_in_id.as_str(), params.name.as_str(), params.color.as_str()).await {
-            Ok(result) => Ok(HttpResponse::Ok().json(Response { msg: "Tag created".to_string() })),
+            Ok(_result) => Ok(HttpResponse::Ok().json(Response { msg: "Tag created".to_string() })),
             Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error creating tag".to_string() }))
         };
     }
@@ -744,7 +742,7 @@ async fn modify_tag(handler: Data<PostgresHandler>, identity: Option<Identity>, 
                 params.color.clone(),
                 params.board_ids.clone()
             ).await {
-            Ok(result) => Ok(HttpResponse::Ok().json(Response { msg: "Tag updated".to_string() })),
+            Ok(_result) => Ok(HttpResponse::Ok().json(Response { msg: "Tag updated".to_string() })),
             Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error updating tag".to_string() }))
         };
     }
@@ -768,7 +766,7 @@ async fn add_remove_board_tag(handler: Data<PostgresHandler>, identity: Option<I
                 &params.board_ids_to_add,
                 &params.board_ids_to_delete
             ).await {
-            Ok(result) => Ok(HttpResponse::Ok().json(Response { msg: "Tag updated".to_string() })),
+            Ok(_result) => Ok(HttpResponse::Ok().json(Response { msg: "Tag updated".to_string() })),
             Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error updating tag".to_string() }))
         };
     }
@@ -809,7 +807,7 @@ async fn delete_tags(handler: Data<PostgresHandler>, identity: Option<Identity>,
     if let Some(identity) = identity {
         let logged_in_id = identity.id().unwrap().to_owned();
         return match handler.delete_tags(logged_in_id.as_str(), &params.ids).await {
-            Ok(result) => Ok(HttpResponse::Ok().json(Response { msg: "Tag deleted".to_string() })),
+            Ok(_result) => Ok(HttpResponse::Ok().json(Response { msg: "Tag deleted".to_string() })),
             Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error deleting tag".to_string() }))
         };
     }
@@ -827,7 +825,7 @@ async fn move_board_tag(handler: Data<PostgresHandler>, identity: Option<Identit
     if let Some(identity) = identity {
         let logged_in_id = identity.id().unwrap().to_owned();
         return match handler.move_board_tag(logged_in_id.as_str(), &params.board_id, params.to_tag_id).await {
-            Ok(result) => Ok(HttpResponse::Ok().json(Response { msg: "Board moved".to_string() })),
+            Ok(_result) => Ok(HttpResponse::Ok().json(Response { msg: "Board moved".to_string() })),
             Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error moving board".to_string() }))
         };
     }

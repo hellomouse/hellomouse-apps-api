@@ -4,10 +4,9 @@ use crate::board::types::board;
 use crate::shared::util::config;
 use crate::shared::util::clean_html::clean_html;
 
-use actix_web::cookie::time::Duration;
 use chrono;
 use chrono::Utc;
-use uuid::{Uuid, uuid};
+use uuid::Uuid;
 use std::collections::{HashMap, HashSet};
 use std::cmp;
 use serde_json::Value;
@@ -44,8 +43,8 @@ impl PostgresHandler {
 
         sqlx::query(r#"CREATE TABLE IF NOT EXISTS board.boards (
             id uuid primary key unique,
-            name text NOT NULL CHECK(length(name) < 4096),
-            description text NOT NULL,
+            name text NOT NULL CHECK(length(name) < 200),
+            description text NOT NULL CHECK(length(description) < 4096),
             creator_id text NOT NULL REFERENCES users(id),
             color text NOT NULL CHECK(color ~* '^#[a-fA-F0-9]{6}$'),
             created timestamptz NOT NULL,
@@ -64,13 +63,13 @@ impl PostgresHandler {
             id uuid primary key unique,
             board_id uuid NOT NULL REFERENCES board.boards(id),
             pin_type integer NOT NULL,
-            content text NOT NULL,
+            content text NOT NULL CHECK(length(content) < 20000),
             creator_id text NOT NULL REFERENCES users(id),
             created timestamptz NOT NULL,
             edited timestamptz NOT NULL,
             flags integer NOT NULL,
-            attachment_paths text[],
-            metadata json
+            attachment_paths text[] CHECK(pg_column_size(attachment_paths) < 8000),
+            metadata json CHECK(pg_column_size(metadata) < 16000)
         );"#).execute(&self.pool).await?;
 
         sqlx::query(r#"CREATE TABLE IF NOT EXISTS board.favorites (
@@ -132,7 +131,7 @@ impl PostgresHandler {
         }
     }
 
-    pub async fn create_board(&self, name: String, creator_id: &UserId, desc: String, color: String,
+    pub async fn create_board(&self, name: &str, creator_id: &UserId, desc: &str, color: &str,
             perms: HashMap<String, Perm>, tag_id: Option<i32>)
             -> Result<board::Board, sqlx::Error> {
         let mut id: Uuid;
@@ -182,7 +181,7 @@ impl PostgresHandler {
         return Ok(self.get_board(&id).await.unwrap());
     }
 
-    pub async fn modify_board(&self, user_id: String, board_id: &Uuid, name: Option<String>, desc: Option<String>,
+    pub async fn modify_board(&self, user_id: &UserId, board_id: &Uuid, name: Option<String>, desc: Option<String>,
         color: Option<String>, perms: Option<HashMap<String, Perm>>)
             -> Result<board::Board, sqlx::Error> {
         let mut b = self.get_board(&board_id).await.unwrap();
@@ -200,7 +199,7 @@ impl PostgresHandler {
         if perms.is_some() && perms.as_ref().unwrap() != &b.perms {
             let mut perms = perms.unwrap();
 
-            if b.perms.get(&user_id).unwrap().perm_level == PermLevel::Edit {
+            if b.perms.get(&user_id as &str).unwrap().perm_level == PermLevel::Edit {
                 // Cannot make anyone else owner
                 let mut bad_keys: Vec<String> = Vec::new();
                 for (user, perm) in &mut perms {
@@ -278,7 +277,7 @@ impl PostgresHandler {
         Ok(())
     }
 
-    pub async fn mass_edit_board_colors(&self, user: &UserId, board_ids: Vec<Uuid>, new_color: &String)
+    pub async fn mass_edit_board_colors(&self, user_id: &UserId, board_ids: Vec<Uuid>, new_color: &str)
             -> Result<(), sqlx::Error> {
         // Limit board id count to 200
         let end = std::cmp::min(200, board_ids.len());
@@ -290,9 +289,9 @@ impl PostgresHandler {
                 let board = self.get_board(x).await;
                 if board.is_none() { return false; }
                 let board = board.unwrap();
-                return board.perms.contains_key(user) &&
-                    (board.perms.get(user).unwrap().perm_level == PermLevel::Owner ||
-                    board.perms.get(user).unwrap().perm_level == PermLevel::Edit);
+                return board.perms.contains_key(user_id) &&
+                    (board.perms.get(user_id).unwrap().perm_level == PermLevel::Owner ||
+                    board.perms.get(user_id).unwrap().perm_level == PermLevel::Edit);
             })
             .collect::<Vec<Uuid>>()
             .await;
@@ -305,7 +304,7 @@ impl PostgresHandler {
         Ok(())
     }
 
-    pub async fn get_boards(&self, user: &UserId, offset: Option<u32>, limit: Option<u32>,
+    pub async fn get_boards(&self, user_id: &UserId, offset: Option<u32>, limit: Option<u32>,
         not_self: Option<bool>, owner_search: &Option<String>, search_query: &Option<String>,
         sort_by: Option<board::SortBoard>, sort_down: Option<bool>)
             -> Result<Vec<board::Board>, sqlx::Error> {
@@ -317,7 +316,7 @@ impl PostgresHandler {
 
         let mut owner_disallow_id: Option<String> = None;
         if not_self.unwrap_or(false) {
-            owner_disallow_id = Some(user.to_string());
+            owner_disallow_id = Some(user_id.to_string());
             owner_search_id = None;
         }
 
@@ -336,7 +335,7 @@ impl PostgresHandler {
                 .bind(search_query)
                 .bind(owner_search_id)
                 .bind(owner_disallow_id)
-                .bind(user)
+                .bind(user_id)
                 .bind(offset.unwrap_or(0) as i32)
                 .bind(cmp::min(100, limit.unwrap_or(20) as i32))
                 .map(|row: PgRow| board::Board {
@@ -348,14 +347,14 @@ impl PostgresHandler {
                     created: row.get::<chrono::DateTime<Utc>, &str>("created"),
                     edited: row.get::<chrono::DateTime<Utc>, &str>("edited"),
                     perms: HashMap::from([(
-                        user.to_string(), Perm { perm_level: row.get::<PermLevel, &str>("perm_id") }
+                        user_id.to_string(), Perm { perm_level: row.get::<PermLevel, &str>("perm_id") }
                     )]),
                     pin_count: row.get::<i32, &str>("pin_count"),
                 })
                 .fetch_all(&self.pool).await?)
     }
 
-    pub async fn get_mass_board_share_perms(&self, user: &UserId, ids: &Vec<Uuid>)
+    pub async fn get_mass_board_share_perms(&self, user_id: &UserId, ids: &Vec<Uuid>)
             -> Result<HashMap<String, board::MassBoardShareUser>, sqlx::Error> {
         // Limit id count to 200
         let end = std::cmp::min(200, ids.len());
@@ -369,7 +368,7 @@ impl PostgresHandler {
             INNER JOIN board.board_perms ON
             user_id = $1 and board_id = ANY($2) and (perm_id = 3 or perm_id = 4)
             LIMIT 200;")
-                .bind(user).bind(ids)
+                .bind(user_id).bind(ids)
                 .map(|row: PgRow| row.get::<Uuid, &str>("board_id"))
                 .fetch_all(&self.pool).await?;
         let board_len = allowed_board_ids.len();
@@ -377,7 +376,7 @@ impl PostgresHandler {
         // Get all users with these allowed board ids, ensuring they exist in all boards
         let users = sqlx::query("SELECT perm_id, id, board_id, name FROM users, board.board_perms WHERE
             user_id = id and board_id = ANY($2) LIMIT 200;")
-                .bind(user).bind(allowed_board_ids)
+                .bind(user_id).bind(allowed_board_ids)
                 .map(|row: PgRow| (
                     row.get::<String, &str>("id"),
                     row.get::<String, &str>("name"),
@@ -415,7 +414,7 @@ impl PostgresHandler {
     }
 
     // Returns number of boards changed
-    pub async fn mass_change_board_share_perms(&self, user: &UserId, ids: &Vec<Uuid>,
+    pub async fn mass_change_board_share_perms(&self, user_id: &UserId, ids: &Vec<Uuid>,
                 perms_to_add: &HashMap<String, Perm>, users_to_delete: &Vec<String>)
             -> Result<i32, sqlx::Error> {
         // Limit id count to 200
@@ -426,13 +425,13 @@ impl PostgresHandler {
         let mut tx = self.pool.begin().await?;
         let allowed_board_ids_owner = sqlx::query("SELECT DISTINCT board_id FROM board.boards
             INNER JOIN board.board_perms ON user_id = $1 and board_id = ANY($2) and perm_id = $3 LIMIT 200;")
-                .bind(user).bind(ids).bind(PermLevel::Owner)
+                .bind(user_id).bind(ids).bind(PermLevel::Owner)
                 .map(|row: PgRow| row.get::<Uuid, &str>("board_id"))
                 .fetch_all(&mut *tx).await?;
 
         let allowed_board_ids_edit = sqlx::query("SELECT DISTINCT board_id FROM board.boards
             INNER JOIN board.board_perms ON user_id = $1 and board_id = ANY($2) and perm_id = $3 LIMIT 200;")
-                .bind(user).bind(ids).bind(PermLevel::Edit)
+                .bind(user_id).bind(ids).bind(PermLevel::Edit)
                 .map(|row: PgRow| row.get::<Uuid, &str>("board_id"))
                 .fetch_all(&mut *tx).await?;
 
@@ -528,7 +527,7 @@ impl PostgresHandler {
         }
     }
 
-    pub async fn create_pin(&self, creator: &UserId, pin_type: pin::PinType, board_id: &Uuid, content: String,
+    pub async fn create_pin(&self, creator_id: &UserId, pin_type: pin::PinType, board_id: &Uuid, content: String,
             attachment_paths: Vec<String>, flags: pin::PinFlags, metadata: Value)
             -> Result<pin::Pin, sqlx::Error> {
         let mut id: Uuid;
@@ -544,7 +543,7 @@ impl PostgresHandler {
 
         sqlx::query(r#"INSERT INTO board.pins(id, board_id, pin_type, content, creator_id, created, edited, flags, attachment_paths, metadata)
             VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);"#)
-            .bind(id).bind(board_id).bind(pin_type as i16).bind(content).bind(creator)
+            .bind(id).bind(board_id).bind(pin_type as i16).bind(content).bind(creator_id)
             .bind(created).bind(edited).bind(flags.bits() as i32).bind(attachment_paths).bind(metadata)
             .execute(&mut *tx).await?;
 
@@ -609,7 +608,7 @@ impl PostgresHandler {
         Ok(())
     }
 
-    pub async fn mass_edit_pin_flags(&self, user: &UserId, pin_ids: Vec<Uuid>, flags: pin::PinFlags, add_flags: bool)
+    pub async fn mass_edit_pin_flags(&self, user_id: &UserId, pin_ids: Vec<Uuid>, flags: pin::PinFlags, add_flags: bool)
             -> Result<(), sqlx::Error> {
         // Limit pin id count to 100
         let end = std::cmp::min(100, pin_ids.len());
@@ -617,7 +616,7 @@ impl PostgresHandler {
 
         // Filter pins to ones the user can edit
         let pin_ids = futures::stream::iter(pin_ids)
-            .filter(|x| async { self.can_edit_pin(user, x).await })
+            .filter(|x| async { self.can_edit_pin(user_id, x).await })
             .collect::<Vec<Uuid>>()
             .await;
 
@@ -637,7 +636,7 @@ impl PostgresHandler {
         Ok(())
     }
 
-    pub async fn mass_edit_pin_colors(&self, user: &UserId, pin_ids: Vec<Uuid>, new_color: &String)
+    pub async fn mass_edit_pin_colors(&self, user_id: &UserId, pin_ids: Vec<Uuid>, new_color: &str)
             -> Result<(), sqlx::Error> {
         // Limit pin id count to 100
         let end = std::cmp::min(100, pin_ids.len());
@@ -645,7 +644,7 @@ impl PostgresHandler {
 
         // Filter pins to ones the user can edit
         let pin_ids = futures::stream::iter(pin_ids)
-            .filter(|x| async { self.can_edit_pin(user, x).await })
+            .filter(|x| async { self.can_edit_pin(user_id, x).await })
             .collect::<Vec<Uuid>>()
             .await;
 
@@ -664,7 +663,7 @@ impl PostgresHandler {
         Ok(())
     }
 
-    pub async fn mass_delete_pins(&self, user: &UserId, pin_ids: Vec<Uuid>)
+    pub async fn mass_delete_pins(&self, user_id: &UserId, pin_ids: Vec<Uuid>)
             -> Result<(), sqlx::Error> {
         // Limit pin id count to 100
         let end = std::cmp::min(100, pin_ids.len());
@@ -672,7 +671,7 @@ impl PostgresHandler {
 
         // Filter pins to ones the user can edit
         let pin_ids = futures::stream::iter(pin_ids)
-            .filter(|x| async { self.can_edit_pin(user, x).await })
+            .filter(|x| async { self.can_edit_pin(user_id, x).await })
             .collect::<Vec<Uuid>>()
             .await;
 
@@ -693,7 +692,7 @@ impl PostgresHandler {
         Ok(())
     }
 
-    pub async fn get_pins(&self, user: &UserId, board_id: &Option<Uuid>, offset: Option<u32>, limit: Option<u32>,
+    pub async fn get_pins(&self, user_id: &UserId, board_id: &Option<Uuid>, offset: Option<u32>, limit: Option<u32>,
             creator: &Option<String>, search_query: &Option<String>, sort_by: Option<pin::SortPin>, sort_down: Option<bool>)
                 -> Result<Vec<pin::Pin>, sqlx::Error> {
         let sort_condition = sort_by.unwrap_or(pin::SortPin::Created).to_string();
@@ -712,7 +711,7 @@ impl PostgresHandler {
                 .bind(board_id)
                 .bind(search_query)
                 .bind(creator)
-                .bind(user)
+                .bind(user_id)
                 .bind(offset.unwrap_or(0) as i32)
                 .bind(cmp::min(100, limit.unwrap_or(20) as i32))
                 .map(|row: PgRow| pin::Pin {
@@ -730,24 +729,24 @@ impl PostgresHandler {
                 .fetch_all(&self.pool).await?)
     }
 
-    pub async fn get_perms_for_board(&self, user: &UserId, board_id: &Uuid) -> Option<Perm> {
+    pub async fn get_perms_for_board(&self, user_id: &UserId, board_id: &Uuid) -> Option<Perm> {
         let board = self.get_board(board_id).await;
         if board.is_none() { return None; }
         let board = board.unwrap();
 
-        let perm = board.perms.get(user);
+        let perm = board.perms.get(user_id);
         if perm.is_none() { return None; }
         return Some(perm.unwrap().clone());
     }
 
-    pub async fn get_perms_for_pin(&self, user: &UserId, pin_id: &Uuid) -> Option<Perm> {
+    pub async fn get_perms_for_pin(&self, user_id: &UserId, pin_id: &Uuid) -> Option<Perm> {
         let pin = self.get_pin(pin_id).await;
         if pin.is_none() { return None; }
-        return self.get_perms_for_board(user, &pin.unwrap().board_id).await;
+        return self.get_perms_for_board(user_id, &pin.unwrap().board_id).await;
     }
 
-    pub async fn can_edit_pin(&self, user: &UserId, pin_id: &Uuid) -> bool {
-        let perm = self.get_perms_for_pin(user, pin_id).await;
+    pub async fn can_edit_pin(&self, user_id: &UserId, pin_id: &Uuid) -> bool {
+        let perm = self.get_perms_for_pin(user_id, pin_id).await;
         if perm.is_none() { return false; }
 
         let perm = perm.unwrap().perm_level;
@@ -759,36 +758,36 @@ impl PostgresHandler {
         // SelfEdit can edit only if pin creator is self
         if perm == PermLevel::SelfEdit {
             let pin = self.get_pin(pin_id).await;
-            return pin.is_some() && pin.unwrap().creator == user;
+            return pin.is_some() && pin.unwrap().creator == user_id;
         }
         return false;
     }
 
-    pub async fn add_favorites(&self, user: &UserId, pin_ids: &Vec<Uuid>)
+    pub async fn add_favorites(&self, user_id: &UserId, pin_ids: &Vec<Uuid>)
             -> Result<(), sqlx::Error> {
         // Limit pin id count to 100
         let end = std::cmp::min(100, pin_ids.len());
         let pin_ids = &pin_ids[0..end];
 
         sqlx::query(r#"INSERT INTO board.favorites(user_id, pin_id) VALUES($1, unnest($2)) ON CONFLICT DO NOTHING;"#)
-            .bind(user).bind(pin_ids)
+            .bind(user_id).bind(pin_ids)
             .execute(&self.pool).await?;
         return Ok(());
     }
 
-    pub async fn remove_favorites(&self, user: &UserId, pin_ids: &Vec<Uuid>)
+    pub async fn remove_favorites(&self, user_id: &UserId, pin_ids: &Vec<Uuid>)
             -> Result<(), sqlx::Error> {
         // Limit pin id count to 100
         let end = std::cmp::min(100, pin_ids.len());
         let pin_ids = &pin_ids[0..end];
 
         sqlx::query(r#"DELETE FROM board.favorites WHERE user_id = $1 and pin_id = ANY($2);"#)
-            .bind(user).bind(pin_ids)
+            .bind(user_id).bind(pin_ids)
             .execute(&self.pool).await?;
         return Ok(());
     }
 
-    pub async fn get_favorites(&self, user: &UserId,
+    pub async fn get_favorites(&self, user_id: &UserId,
             offset: Option<u32>, limit: Option<u32>,
             sort_by: Option<pin::SortPin>, sort_down: Option<bool>)
             -> Result<Vec<pin::Pin>, sqlx::Error> {
@@ -803,7 +802,7 @@ impl PostgresHandler {
                 ORDER BY CASE when (flags & 4 = 4) then 2 when (flags & 2 = 2) then 0 else 1 end ".to_owned() +
                 sort_down_str + "," + &sort_condition + " " + sort_down_str + "
                 OFFSET $2 LIMIT $3;").as_str())
-            .bind(user)
+            .bind(user_id)
             .bind(offset.unwrap_or(0) as i32)
             .bind(cmp::min(100, limit.unwrap_or(20) as i32))
             .map(|row: PgRow| pin::Pin {
@@ -821,22 +820,22 @@ impl PostgresHandler {
             .fetch_all(&self.pool).await?)
     }
 
-    pub async fn check_favorites(&self, user: &UserId, pin_ids: &Vec<Uuid>)
+    pub async fn check_favorites(&self, user_id: &UserId, pin_ids: &Vec<Uuid>)
             -> Result<Vec<Uuid>, sqlx::Error> {
         // Limit pin id count to 100
         let end = std::cmp::min(100, pin_ids.len());
         let pin_ids = &pin_ids[0..end];
 
         Ok(sqlx::query("SELECT pin_id FROM board.favorites WHERE user_id = $1 and pin_id = ANY($2);")
-            .bind(user).bind(pin_ids)
+            .bind(user_id).bind(pin_ids)
             .map(|row: PgRow| row.get::<Uuid, &str>("pin_id"))
             .fetch_all(&self.pool).await?)
     }
 
-    pub async fn get_pin_history_preview(&self, pin_id: &Uuid, user: &UserId)
+    pub async fn get_pin_history_preview(&self, pin_id: &Uuid, user_id: &UserId)
              -> Result<Vec<pin::PinHistoryAbridged>, sqlx::Error> {
         // Check if user has permission to view pin
-        let perm = self.get_perms_for_pin(user, pin_id).await;
+        let perm = self.get_perms_for_pin(user_id, pin_id).await;
         if perm.is_none() { return Ok(Vec::new()); }
 
         Ok(sqlx::query("SELECT * FROM board.pin_history WHERE pin_id = $1  ORDER BY time DESC LIMIT 200;")
@@ -849,10 +848,10 @@ impl PostgresHandler {
                 .fetch_all(&self.pool).await?)
     }
 
-    pub async fn get_pin_history(&self, pin_id: &Uuid, history_id: i32, user: &UserId)
+    pub async fn get_pin_history(&self, pin_id: &Uuid, history_id: i32, user_id: &UserId)
              -> Result<Option<pin::PinHistory>, sqlx::Error> {
         // Check if user has permission to view pin
-        let perm = self.get_perms_for_pin(user, pin_id).await;
+        let perm = self.get_perms_for_pin(user_id, pin_id).await;
         if perm.is_none() { return Ok(None); }
 
         Ok(Some(sqlx::query("SELECT * FROM board.pin_history WHERE pin_id = $1 AND id = $2 ORDER BY time DESC LIMIT 1;")
@@ -868,7 +867,7 @@ impl PostgresHandler {
                 .fetch_one(&self.pool).await?))
     }
 
-    async fn add_to_pin_history(&self, pin_id: &Uuid, user: &UserId, content: &String,
+    async fn add_to_pin_history(&self, pin_id: &Uuid, user_id: &UserId, content: &str,
             attachments: &Vec<String>, flags: &PinFlags, metadata: &Value)
             -> Result<(), sqlx::Error> {
         // If last update was too recent and by the same user update previous entry
@@ -879,7 +878,7 @@ impl PostgresHandler {
         match sqlx::query("SELECT * FROM board.pin_history WHERE pin_id = $1 AND id IN(SELECT MAX(id) from board.pin_history);")
                 .bind(pin_id).fetch_one(&self.pool).await {
             Ok(history) => {
-                update_instead = history.get::<String, &str>("editor") == user &&
+                update_instead = history.get::<String, &str>("editor") == user_id &&
                     history.get::<chrono::DateTime<Utc>, &str>("time") > now - chrono::Duration::minutes(5);
             },
             Err(_err) => {}
@@ -888,7 +887,7 @@ impl PostgresHandler {
             sqlx::query(r#"UPDATE board.pin_history
                 SET editor=$1, pin_id=$2, content=$3, time=$4, flags=$5, attachment_paths=$6, metadata=$7
                 WHERE id IN(SELECT MAX(id) from board.pin_history);"#)
-                .bind(user).bind(pin_id).bind(content).bind(now)
+                .bind(user_id).bind(pin_id).bind(content).bind(now)
                 .bind(flags.bits() as i32).bind(attachments).bind(metadata)
                 .execute(&self.pool).await?;
             return Ok(());
@@ -901,7 +900,7 @@ impl PostgresHandler {
 
         sqlx::query(r#"INSERT INTO board.pin_history(editor, pin_id, content, time, flags, attachment_paths, metadata)
             VALUES($1, $2, $3, $4, $5, $6, $7);"#)
-            .bind(user).bind(pin_id).bind(content).bind(now)
+            .bind(user_id).bind(pin_id).bind(content).bind(now)
             .bind(flags.bits() as i32).bind(attachments).bind(metadata)
             .execute(&self.pool).await?;
         Ok(())
@@ -996,7 +995,7 @@ impl PostgresHandler {
         return Ok(());
     }
 
-    pub async fn mass_edit_tag_colors(&self, user: &UserId, tag_ids: &Vec<i32>, new_color: &String)
+    pub async fn mass_edit_tag_colors(&self, user_id: &UserId, tag_ids: &Vec<i32>, new_color: &str)
             -> Result<(), sqlx::Error> {
         // Limit tag id count to 200
         let end = std::cmp::min(200, tag_ids.len());
@@ -1004,7 +1003,7 @@ impl PostgresHandler {
 
         let mut tx = self.pool.begin().await?;
         sqlx::query("UPDATE board.tags SET color = $1 WHERE id = ANY($2) AND creator_id = $3;")
-            .bind(new_color).bind(tag_ids).bind(user)
+            .bind(new_color).bind(tag_ids).bind(user_id)
             .execute(&mut *tx).await?;
         tx.commit().await?;
         Ok(())
