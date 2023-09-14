@@ -6,6 +6,7 @@ config:
     limit board counts
 
 limit password length
+- add a pepper secret 
 
 limit login attempts
 

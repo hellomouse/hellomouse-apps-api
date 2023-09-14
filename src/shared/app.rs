@@ -7,7 +7,6 @@ use actix_web::{
     HttpMessage as _, HttpRequest, Result
 };
 
-use std::sync::Mutex;
 use serde::{Serialize, Deserialize};
 use serde_json::Value;
 

@@ -59,7 +59,7 @@ impl PostgresHandler {
     pub async fn create_account(&self, user_id: &UserId, name: &str, password: &str) -> Result<(), sqlx::Error> {
         let password_hash = libpasta::hash_password(&password);
         sqlx::query("INSERT INTO users(id, name, password_hash) VALUES($1, $2, $3);")
-            .bind(user_id).bind(name).bind(password_hash)
+            .bind(user_id.to_lowercase()).bind(name).bind(password_hash)
             .execute(&self.pool).await?;
         Ok(())
     }
