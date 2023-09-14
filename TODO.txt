@@ -6,7 +6,6 @@ safe cors
 limit login attempts
 - api to get login attempts?
 
-
 on timeout - instead of rejecting the request, return timeout
 
 don't re-generate the rules every time for htmlclean

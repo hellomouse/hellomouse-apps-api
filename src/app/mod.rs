@@ -2,7 +2,7 @@ use actix_identity::IdentityMiddleware;
 use actix_session::{config::PersistentSession, storage::CookieSessionStore, SessionMiddleware};
 use actix_web::{
     get, post, HttpResponse, web::{self, Data},
-    cookie::{time::Duration, Key, SameSite},
+    cookie::{time::Duration, SameSite},
     http::StatusCode,
     middleware, App, HttpServer, Result
 };
@@ -12,6 +12,7 @@ use actix_extensible_rate_limit::backend::{SimpleInputFunctionBuilder, memory::I
 use std::time;
 
 use crate::shared::util::config;
+use crate::shared::util::secret;
 
 use crate::shared::handlers::postgres_handler::PostgresHandler as SharedPostgresHandler;
 use crate::board::handlers::postgres_handler::PostgresHandler as BoardPostgresHandler;
@@ -88,7 +89,7 @@ pub async fn start() -> std::io::Result<()> {
         env_logger::init();
     }
     
-    let secret_key = Key::generate(); // For sessions
+    let secret_key = secret::get_session_key()?;
     let backend = InMemoryBackend::builder().build(); // For rate limiting
 
     let handler1 = SharedPostgresHandler::new().await.unwrap();
@@ -124,7 +125,6 @@ pub async fn start() -> std::io::Result<()> {
             .wrap(
                 SessionMiddleware::builder(CookieSessionStore::default(), secret_key.clone())
                     .cookie_name("login".to_owned())
-                    // .cookie_same_site(SameSite::Lax)
                     .cookie_secure(false)
                     .cookie_http_only(true)
                     .session_lifecycle(PersistentSession::default().session_ttl(Duration::seconds(
