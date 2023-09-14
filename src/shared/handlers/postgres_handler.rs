@@ -45,15 +45,23 @@ impl PostgresHandler {
         Ok(())
     }
 
-    pub async fn can_login(&self, user_id: &UserId, password: &str) -> Result<bool, sqlx::Error> {
+    pub async fn can_login(&self, user_id: &UserId, mut password: &str) -> Result<bool, sqlx::Error> {
         if user_id == "public" { return Ok(false); } // Cannot log into public user_id
+
+        // Too long password: replace password with a dummy and flag
+        // that it should always be invalid
+        let mut password_correct_override = true;
+        if password.len() > config::get_config().count.max_password_length {
+            password = "fake_password";
+            password_correct_override = false;
+        }
 
         let p = match sqlx::query("SELECT * FROM users WHERE id = $1;")
             .bind(user_id).fetch_one(&self.pool).await {
             Ok(user_id) => user_id.get::<String, &str>("password_hash"),
             Err(_err) => "".to_string()
         };
-        Ok(libpasta::verify_password(&p, &password) && password.chars().count() > 0)
+        Ok(libpasta::verify_password(&p, &password) && password.chars().count() > 0 && password_correct_override)
     }
 
     pub async fn create_account(&self, user_id: &UserId, name: &str, password: &str) -> Result<(), sqlx::Error> {

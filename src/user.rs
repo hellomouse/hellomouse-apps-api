@@ -1,4 +1,5 @@
 use clap::{arg, Parser, Subcommand};
+use crate::shared::util::config;
 use hellomouse_board_server::shared::handlers::postgres_handler::PostgresHandler as SharedPostgresHandler;
 
 #[derive(Parser)]
@@ -27,8 +28,12 @@ enum Commands {
 }
 
 fn validate_password(password: &str) -> Result<String, String> {
-    if password.len() < 10 {
-        return Err("Password must be 10 characters or more in length".to_string());
+    if password.len() < config::get_config().count.min_password_length ||
+       password.len() > config::get_config().count.max_password_length {
+        return Err(format!("Password must be {} - {} characters (inclusive) in length", 
+            config::get_config().count.min_password_length,
+            config::get_config().count.max_password_length
+        ).to_string());
     }
     Ok(password.to_string())
 }

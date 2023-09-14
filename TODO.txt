@@ -2,13 +2,10 @@ note: json merge will keep old keys, maybe just overwrite and keep defaults?
 
 safe cors
 
-config:
-    limit board counts
-
-limit password length
-- add a pepper secret 
 
 limit login attempts
+- api to get login attempts?
+
 
 on timeout - instead of rejecting the request, return timeout
 
@@ -31,6 +28,3 @@ https://libpasta.github.io/introduction/basic-usage/
 
 tags or hashtags for notes
 - detect hashtags and allow sorting by
-
-
-trash users

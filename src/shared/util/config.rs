@@ -10,7 +10,14 @@ use sqlx::postgres::{PgPoolOptions, PgPool};
 #[derive(Deserialize, Clone)]
 pub struct Config {
     pub database: DatabaseConfig,
-    pub server: ServerConfig
+    pub server: ServerConfig,
+    pub count: CountConfig
+}
+
+#[derive(Deserialize, Clone)]
+pub struct CountConfig {
+    pub min_password_length: usize,
+    pub max_password_length: usize
 }
 
 #[derive(Deserialize, Clone)]
