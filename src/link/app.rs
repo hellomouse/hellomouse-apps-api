@@ -27,7 +27,7 @@ async fn add_link(handler: Data<PostgresHandler>, identity: Option<Identity>, pa
             params.url.as_str()
         ).await {
             Ok(result) => Ok(HttpResponse::Ok().json(AddLinkReturn { id: result })),
-            Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error creating board".to_string() }))
+            Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error creating link".to_string() }))
         };
     }
     login_fail!();
@@ -48,7 +48,7 @@ async fn delete_link(handler: Data<PostgresHandler>, identity: Option<Identity>,
             params.id
         ).await {
             Ok(_result) => Ok(HttpResponse::Ok().json(Response { msg: "Link removed".to_string() })),
-            Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error creating board".to_string() }))
+            Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error deleting link".to_string() }))
         };
     }
     login_fail!();
@@ -80,6 +80,6 @@ async fn get_link(handler: Data<PostgresHandler>, user_handler: Data<SharedPostg
             links: result,
             creator_name: name
         })),
-        Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error creating board".to_string() }))
+        Err(_err) => Ok(HttpResponse::InternalServerError().json(ErrorResponse{ error: "Error getting links".to_string() }))
     };
 }
