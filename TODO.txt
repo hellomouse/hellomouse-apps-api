@@ -2,13 +2,24 @@ note: json merge will keep old keys, maybe just overwrite and keep defaults?
 
 safe cors
 
+debug mode in config
 
 limit login attempts
-- api to get login attempts?
+- exponential backoff
 
 on timeout - instead of rejecting the request, return timeout
 
 don't re-generate the rules every time for htmlclean
+- maybe use another lib doesn't prevent style based xss
+prevent csrf
+
+server:
+- server side check length is non-zero
+- cache db results?
+- all the perm checks for can view - check if public can view as well
+    - maybe login should be no view error
+- check no race conditions in db stuff
+
 
 
 future:
@@ -23,6 +34,10 @@ API for updating PFP
 https://datatracker.ietf.org/doc/html/rfc7617
 https://www.lpalmieri.com/posts/password-authentication-in-rust/
 https://libpasta.github.io/introduction/basic-usage/
+
+security:
+add pepper?
+totp?
 
 
 tags or hashtags for notes
