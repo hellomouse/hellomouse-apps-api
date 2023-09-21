@@ -7,8 +7,7 @@ use actix_web::{
     middleware, App, HttpServer, Result
 };
 use actix_cors::Cors;
-use actix_extensible_rate_limit::{RateLimiter};
-use actix_extensible_rate_limit::backend::{SimpleInputFunctionBuilder, memory::InMemoryBackend};
+use actix_governor::{Governor, GovernorConfigBuilder};
 use std::time;
 
 use crate::shared::util::config;
@@ -97,8 +96,6 @@ pub async fn start() -> std::io::Result<()> {
     }
     
     let secret_key = secret::get_session_key()?;
-    let backend = InMemoryBackend::builder().build(); // For rate limiting
-
     let handler1 = SharedPostgresHandler::new().await.unwrap();
     let handler2 = BoardPostgresHandler::new().await.unwrap();
     let handler3 = SiteWebHandler::new().await.unwrap();
@@ -111,20 +108,21 @@ pub async fn start() -> std::io::Result<()> {
 
     println!("starting HTTP server at http://localhost:{}", config::get_config().server.port);
 
-    HttpServer::new(move || {
-        let input = SimpleInputFunctionBuilder::new(
-                time::Duration::from_secs(config::get_config().server.max_requests_delta_seconds),
-                config::get_config().server.max_requests_per_delta)
-            .real_ip_key().build();
-        // let rate_limit_middleware = RateLimiter::builder(backend.clone(), input).add_headers().build();
+    let governor_config = GovernorConfigBuilder::default()
+        .per_millisecond(config::get_config().server.request_quota_replenish_ms)
+        .burst_size(config::get_config().server.request_quota)
+        .use_headers()
+        .finish()
+        .unwrap();
 
+    HttpServer::new(move || {
         App::new()
             .app_data(Data::new(handler1.clone()))
             .app_data(Data::new(handler2.clone()))
             .app_data(Data::new(handler3.clone()))
             .app_data(Data::new(handler4.clone()))
             .configure(routes)
-            // .wrap(rate_limit_middleware)
+            .wrap(Governor::new(&governor_config))
             .wrap(IdentityMiddleware::default())
             .wrap(Cors::permissive()
                 // .allowed_origin("http://localhost:3000")

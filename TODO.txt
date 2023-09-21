@@ -2,12 +2,14 @@ note: json merge will keep old keys, maybe just overwrite and keep defaults?
 
 safe cors
 
+headers
+.wrap(middleware::DefaultHeaders::new().add(("X-Version", "0.2")))
+    - https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html
+
 debug mode in config
 
 limit login attempts
 - exponential backoff
-
-on timeout - instead of rejecting the request, return timeout
 
 don't re-generate the rules every time for htmlclean
 - maybe use another lib doesn't prevent style based xss
@@ -19,7 +21,6 @@ server:
 - all the perm checks for can view - check if public can view as well
     - maybe login should be no view error
 - check no race conditions in db stuff
-
 
 
 future:

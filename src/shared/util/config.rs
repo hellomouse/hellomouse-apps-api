@@ -34,8 +34,8 @@ pub struct ServerConfig {
     pub port: u16,
     pub log: bool,
     pub login_cookie_valid_duration_seconds: u64,
-    pub max_requests_per_delta: u64,
-    pub max_requests_delta_seconds: u64
+    pub request_quota_replenish_ms: u64,
+    pub request_quota: u32
 }
 
 #[cached]
