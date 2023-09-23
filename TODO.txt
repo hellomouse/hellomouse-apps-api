@@ -19,13 +19,6 @@ prevent csrf
 -> add to queue of "html purify" with target table to insert to
 
 
-server:
-- all the perm checks for can view - check if public can view as well
-    - maybe login should be no view error
-- check no race conditions in db stuff
-
-
-
 future:
 
 make a file upload API

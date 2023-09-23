@@ -609,28 +609,30 @@ struct PinHistoryReturnForm {
 
 #[get("/v1/board/pins/history/preview")]
 async fn get_pin_history_preview(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Query<PinHistoryPreviewForm>) -> Result<HttpResponse> {
+    let mut logged_in_id = "public".to_string();
     if let Some(identity) = identity {
-        let logged_in_id = identity.id().unwrap().to_owned();
-        let result = handler.get_pin_history_preview(&params.pin_id, logged_in_id.as_str()).await;
-        if !result.is_ok() {
-            return Ok(HttpResponse::Ok().json(ErrorResponse { error: "Failed to fetch history preview".to_string() }));
-        }
-        return Ok(HttpResponse::Ok().json(PinHistoryPreviewReturnForm { history: result.unwrap() }));
+        logged_in_id = identity.id().unwrap().to_owned();
     }
-    login_fail!();
+
+    let result = handler.get_pin_history_preview(&params.pin_id, logged_in_id.as_str()).await;
+    if !result.is_ok() {
+        return Ok(HttpResponse::Ok().json(ErrorResponse { error: "Failed to fetch history preview".to_string() }));
+    }
+    return Ok(HttpResponse::Ok().json(PinHistoryPreviewReturnForm { history: result.unwrap() }));
 }
 
 #[get("/v1/board/pins/history")]
 async fn get_pin_history(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Query<PinHistoryForm>) -> Result<HttpResponse> {
+    let mut logged_in_id = "public".to_string();
     if let Some(identity) = identity {
-        let logged_in_id = identity.id().unwrap().to_owned();
-        let result = handler.get_pin_history(&params.pin_id, params.history_id, logged_in_id.as_str()).await;
-        if !result.is_ok() {
-            return Ok(HttpResponse::Ok().json(ErrorResponse { error: "Failed to fetch history".to_string() }));
-        }
-        return Ok(HttpResponse::Ok().json(PinHistoryReturnForm { history: result.unwrap() }));
+        logged_in_id = identity.id().unwrap().to_owned();
     }
-    login_fail!();
+
+    let result = handler.get_pin_history(&params.pin_id, params.history_id, logged_in_id.as_str()).await;
+    if !result.is_ok() {
+        return Ok(HttpResponse::Ok().json(ErrorResponse { error: "Failed to fetch history".to_string() }));
+    }
+    return Ok(HttpResponse::Ok().json(PinHistoryReturnForm { history: result.unwrap() }));
 }
 
 
