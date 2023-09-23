@@ -22,7 +22,7 @@ impl PostgresHandler {
         sqlx::query(r#"
         CREATE TABLE IF NOT EXISTS links (
             id SERIAL PRIMARY KEY,
-            url text NOT NULL CHECK(length(url) < 4096),
+            url text NOT NULL CHECK(length(url) < 4096 AND length(url) > 0),
             creator_id text NOT NULL REFERENCES users(id),
             UNIQUE(creator_id, url)
         );"#).execute(&self.pool).await?;

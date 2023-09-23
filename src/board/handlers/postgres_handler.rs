@@ -43,7 +43,7 @@ impl PostgresHandler {
 
         sqlx::query(r#"CREATE TABLE IF NOT EXISTS board.boards (
             id uuid primary key unique,
-            name text NOT NULL CHECK(length(name) < 200),
+            name text NOT NULL CHECK(length(name) < 200 AND length(name) > 0),
             description text NOT NULL CHECK(length(description) < 4096),
             creator_id text NOT NULL REFERENCES users(id),
             color text NOT NULL CHECK(color ~* '^#[a-fA-F0-9]{6}$'),
@@ -63,7 +63,7 @@ impl PostgresHandler {
             id uuid primary key unique,
             board_id uuid NOT NULL REFERENCES board.boards(id),
             pin_type integer NOT NULL,
-            content text NOT NULL CHECK(length(content) < 20000),
+            content text NOT NULL CHECK(length(content) < 20000 AND length(content) > 0),
             creator_id text NOT NULL REFERENCES users(id),
             created timestamptz NOT NULL,
             edited timestamptz NOT NULL,

@@ -6,21 +6,24 @@ headers
 .wrap(middleware::DefaultHeaders::new().add(("X-Version", "0.2")))
     - https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html
 
-debug mode in config
+
 
 limit login attempts
 - exponential backoff
 
+
+
 don't re-generate the rules every time for htmlclean
 - maybe use another lib doesn't prevent style based xss
 prevent csrf
+-> add to queue of "html purify" with target table to insert to
+
 
 server:
-- server side check length is non-zero
-- cache db results?
 - all the perm checks for can view - check if public can view as well
     - maybe login should be no view error
 - check no race conditions in db stuff
+
 
 
 future:
@@ -39,7 +42,3 @@ https://libpasta.github.io/introduction/basic-usage/
 security:
 add pepper?
 totp?
-
-
-tags or hashtags for notes
-- detect hashtags and allow sorting by
