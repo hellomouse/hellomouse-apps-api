@@ -9,9 +9,11 @@ use actix_web::{
 use actix_cors::Cors;
 use actix_governor::{Governor, GovernorConfigBuilder};
 use std::time;
+use std::sync::Arc;
 
 use crate::shared::util::config;
 use crate::shared::util::secret;
+use crate::shared::util::clean_html;
 
 use crate::shared::handlers::postgres_handler::PostgresHandler as SharedPostgresHandler;
 use crate::board::handlers::postgres_handler::PostgresHandler as BoardPostgresHandler;
@@ -96,8 +98,10 @@ pub async fn start() -> std::io::Result<()> {
     }
     
     let secret_key = secret::get_session_key()?;
+    let html_clean_rules = Arc::new(clean_html::get_html_rules());
+
     let handler1 = SharedPostgresHandler::new().await.unwrap();
-    let handler2 = BoardPostgresHandler::new().await.unwrap();
+    let handler2 = BoardPostgresHandler::new(html_clean_rules).await.unwrap();
     let handler3 = SiteWebHandler::new().await.unwrap();
     let handler4 = LinkPostgresHandler::new().await.unwrap();
 

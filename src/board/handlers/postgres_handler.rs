@@ -11,6 +11,8 @@ use std::collections::{HashMap, HashSet};
 use std::cmp;
 use serde_json::Value;
 use futures::StreamExt;
+use std::sync::Arc;
+use sanitize_html::rules::Rules;
 
 use num;
 
@@ -27,12 +29,16 @@ macro_rules! update_if_not_none {
 
 #[derive(Clone)]
 pub struct PostgresHandler {
-    pool: PgPool
+    pool: PgPool,
+    rules: Arc<Rules>
 }
 
 impl PostgresHandler {
-    pub async fn new() -> Result<PostgresHandler, sqlx::Error> {
-        Ok(PostgresHandler { pool: config::get_pool().await })
+    pub async fn new(rules: Arc<Rules>) -> Result<PostgresHandler, sqlx::Error> {
+        Ok(PostgresHandler {
+            pool: config::get_pool().await,
+            rules: rules
+        })
     }
 
     // Called on first launch for setup
@@ -536,7 +542,7 @@ impl PostgresHandler {
             if self.get_pin(&id).await.is_none() { break; }
         }
         
-        let content = clean_html(&content);
+        let content = clean_html(&content, self.rules.as_ref());
         let created = chrono::offset::Utc::now();
         let edited = created.clone();
         let mut tx = self.pool.begin().await?;
@@ -573,7 +579,7 @@ impl PostgresHandler {
         update_if_not_none!(p, flags);
         update_if_not_none!(p, metadata);
 
-        p.content = clean_html(&p.content);
+        p.content = clean_html(&p.content, self.rules.as_ref());
 
         let mut tx = self.pool.begin().await?;
         sqlx::query("UPDATE board.pins SET pin_type = $2, content = $3, edited = $4, flags = $5, attachment_paths = $6, metadata = $7 WHERE id = $1;")

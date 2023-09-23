@@ -3,7 +3,7 @@ use sanitize_html::rules::{ Rules, Element };
 use sanitize_html::rules::pattern::Pattern;
 use regex::Regex;
 
-fn get_html_rules() -> Rules {
+pub fn get_html_rules() -> Rules {
     // Allowed tags
     let p = Element::new("p").attribute("style", Pattern::any()).attribute("class", Pattern::any());
     let ul = Element::new("ol").attribute("style", Pattern::any()).attribute("class", Pattern::any());
@@ -63,7 +63,7 @@ fn get_html_rules() -> Rules {
     return rules;
 }
 
-pub fn clean_html(input: &String) -> String {
-    let sanitized = sanitize_str(&get_html_rules(), input).unwrap();
+pub fn clean_html(input: &String, rules: &Rules) -> String {
+    let sanitized = sanitize_str(rules, input).unwrap();
     return sanitized;
 }

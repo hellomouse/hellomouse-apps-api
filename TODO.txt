@@ -8,13 +8,6 @@ headers
 
 
 
-
-don't re-generate the rules every time for htmlclean
-- maybe use another lib doesn't prevent style based xss
-prevent csrf
--> add to queue of "html purify" with target table to insert to
-
-
 future:
 
 make a file upload API
