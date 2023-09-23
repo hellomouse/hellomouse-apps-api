@@ -35,7 +35,9 @@ pub struct ServerConfig {
     pub log: bool,
     pub login_cookie_valid_duration_seconds: u64,
     pub request_quota_replenish_ms: u64,
-    pub request_quota: u32
+    pub request_quota: u32,
+    pub login_attempt_window: String,
+    pub login_attempt_max_per_window: u32
 }
 
 #[cached]

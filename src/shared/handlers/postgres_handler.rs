@@ -37,6 +37,15 @@ impl PostgresHandler {
             password_hash text NOT NULL
         );"#).execute(&self.pool).await?;
 
+        sqlx::query(r#"
+        CREATE TABLE IF NOT EXISTS login_attempts (
+            id SERIAL PRIMARY KEY,
+            name text NOT NULL REFERENCES users(id),
+            ip text NOT NULL,
+            success boolean NOT NULL,
+            time timestamptz NOT NULL
+        );"#).execute(&self.pool).await?;
+
         // Create a dummy public user_id
         match self.create_account("Public", "public", "this_password_doesnt_matter").await {
             Ok(_) => (),
@@ -45,7 +54,23 @@ impl PostgresHandler {
         Ok(())
     }
 
-    pub async fn can_login(&self, user_id: &UserId, mut password: &str) -> Result<bool, sqlx::Error> {
+    pub async fn should_ratelimit(&self, user_id: &str, ip: &str) -> Result<bool, sqlx::Error> {
+        sqlx::query("DELETE FROM login_attempts WHERE
+                id != all(array(SELECT id FROM login_attempts ORDER BY time DESC LIMIT 10000));")
+            .execute(&self.pool).await?;
+
+        let count = match sqlx::query(("select count(*) from login_attempts WHERE (name = $1 OR ip = $2)
+            AND success = false AND time >= NOW() - INTERVAL '".to_string()
+                + &config::get_config().server.login_attempt_window + "';").as_str())
+            .bind(user_id).bind(ip)
+            .fetch_one(&self.pool).await {
+                Ok(count) => count.get::<i64, &str>("count"),
+                Err(_err) => 9999999
+            };
+        Ok(count >= config::get_config().server.login_attempt_max_per_window.into())
+    }
+
+    pub async fn can_login(&self, user_id: &UserId, mut password: &str, ip: &str) -> Result<bool, sqlx::Error> {
         if user_id == "public" { return Ok(false); } // Cannot log into public user_id
 
         // Too long password: replace password with a dummy and flag
@@ -61,7 +86,15 @@ impl PostgresHandler {
             Ok(user_id) => user_id.get::<String, &str>("password_hash"),
             Err(_err) => "".to_string()
         };
-        Ok(libpasta::verify_password(&p, &password) && password.chars().count() > 0 && password_correct_override)
+
+        let success = libpasta::verify_password(&p, &password) && password.chars().count() > 0 && password_correct_override;
+
+        // Log login attempt
+        sqlx::query("INSERT INTO login_attempts(name, ip, success, time) VALUES($1, $2, $3, $4);")
+            .bind(user_id.to_lowercase()).bind(ip).bind(success).bind(chrono::offset::Utc::now())
+            .execute(&self.pool).await?;
+
+        Ok(success)
     }
 
     pub async fn create_account(&self, user_id: &UserId, name: &str, password: &str) -> Result<(), sqlx::Error> {

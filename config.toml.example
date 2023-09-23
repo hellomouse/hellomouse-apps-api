@@ -19,6 +19,11 @@ login_cookie_valid_duration_seconds = 4294967295
 request_quota_replenish_ms = 500
 request_quota = 10
 
+# Window should be a postgres interval, limit attempts to
+# this many (failed attempts) per window
+login_attempt_window = "10 minutes"
+login_attempt_max_per_window = 10
+
 [count]
 min_password_length = 8
 max_password_length = 32
