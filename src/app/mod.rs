@@ -18,12 +18,14 @@ use crate::shared::util::clean_html;
 use crate::shared::handlers::postgres_handler::PostgresHandler as SharedPostgresHandler;
 use crate::board::handlers::postgres_handler::PostgresHandler as BoardPostgresHandler;
 use crate::link::handlers::postgres_handler::PostgresHandler as LinkPostgresHandler;
+use crate::music::handlers::postgres_handler::PostgresHandler as MusicPostgresHandler;
 use crate::site::handlers::web_handler::WebHandler as SiteWebHandler;
 
 use crate::shared::app as shared_app;
 use crate::board::app as board_app;
 use crate::site::app as site_app;
 use crate::link::app as link_app;
+use crate::music::app as music_app;
 
 use crate::shared::types::app as app_types;
 
@@ -85,6 +87,15 @@ fn routes(app: &mut web::ServiceConfig) {
         .service(link_app::delete_link)
         .service(link_app::get_link)
 
+        // Music
+        .service(music_app::create_playlist)
+        .service(music_app::edit_playlist)
+        .service(music_app::delete_playlist)
+        .service(music_app::get_playlist)
+        .service(music_app::get_playlists)
+        .service(music_app::add_user_playlist)
+        .service(music_app::remove_user_playlist)
+
         // Site
         .service(site_app::get_pin_preview)
         .service(site_app::download_site)
@@ -104,11 +115,13 @@ pub async fn start() -> std::io::Result<()> {
     let handler2 = BoardPostgresHandler::new(html_clean_rules).await.unwrap();
     let handler3 = SiteWebHandler::new().await.unwrap();
     let handler4 = LinkPostgresHandler::new().await.unwrap();
+    let handler5 = MusicPostgresHandler::new().await.unwrap();
 
     handler1.init().await.unwrap();
     handler2.init().await.unwrap();
     handler3.init().await.unwrap();
     handler4.init().await.unwrap();
+    handler5.init().await.unwrap();
 
     println!("starting HTTP server at http://localhost:{}", config::get_config().server.port);
 
@@ -125,6 +138,7 @@ pub async fn start() -> std::io::Result<()> {
             .app_data(Data::new(handler2.clone()))
             .app_data(Data::new(handler3.clone()))
             .app_data(Data::new(handler4.clone()))
+            .app_data(Data::new(handler5.clone()))
             .configure(routes)
             .wrap(Governor::new(&governor_config))
             .wrap(IdentityMiddleware::default())
