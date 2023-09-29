@@ -90,6 +90,7 @@ fn routes(app: &mut web::ServiceConfig) {
         // Music
         .service(music_app::create_playlist)
         .service(music_app::edit_playlist)
+        .service(music_app::edit_playlist_perms)
         .service(music_app::delete_playlist)
         .service(music_app::get_playlist)
         .service(music_app::get_playlists)

@@ -1,7 +1,8 @@
-use crate::shared::types::account::UserId;
+use crate::shared::types::account::{UserId, Perm, PermLevel};
 use crate::shared::util::config;
 use crate::music::types::{Playlist, PlaylistDetails};
 
+use std::collections::HashMap;
 use chrono::Utc;
 use uuid::Uuid;
 use sqlx::Row;
@@ -40,6 +41,13 @@ impl PostgresHandler {
             user_id text NOT NULL REFERENCES users(id)
         );"#).execute(&self.pool).await?;
 
+        sqlx::query(r#"CREATE TABLE IF NOT EXISTS music.playlist_perms (
+            id uuid NOT NULL REFERENCES music.playlists(id),
+            perm_id integer,
+            user_id text NOT NULL REFERENCES users(id),
+            UNIQUE(id, user_id)
+        );"#).execute(&self.pool).await?;
+
         sqlx::query(r#"
         CREATE TABLE IF NOT EXISTS music.songs (
             id uuid primary key unique,
@@ -69,6 +77,9 @@ impl PostgresHandler {
         sqlx::query("INSERT INTO music.user_playlists(id, user_id) VALUES($1, $2) ON CONFLICT DO NOTHING;")
             .bind(id).bind(user_id)
             .execute(&self.pool).await?;
+        sqlx::query(r#"INSERT INTO music.playlist_perms(id, user_id, perm_id) VALUES($1, $2, $3);"#)
+            .bind(id).bind(user_id).bind(PermLevel::Owner)
+            .execute(&self.pool).await?;
         Ok(id)
     }
 
@@ -86,26 +97,106 @@ impl PostgresHandler {
         Ok(())
     }
 
-    pub async fn edit_playlist(&self, user_id: &UserId, id: &Uuid, name: &str) -> Result<(), sqlx::Error> {
-        sqlx::query("UPDATE music.playlists SET name = $2 WHERE creator_id = $3 AND id = $1;")
-            .bind(id).bind(name).bind(user_id)
+    pub async fn edit_playlist(&self, id: &Uuid, name: &str) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE music.playlists SET name = $2 WHERE id = $1;")
+            .bind(id).bind(name)
             .execute(&self.pool).await?;
         Ok(())
     }
 
-    pub async fn delete_playlist(&self, user_id: &UserId, id: &Uuid) -> Result<(), sqlx::Error> {
+    pub async fn edit_playlist_perms(&self, user_id: &UserId, id: &Uuid, mut perms: HashMap<String, Perm>) -> Result<(), sqlx::Error> {
+        let p = self.get_playlist(&user_id, &id).await.unwrap();
+        let mut tx = self.pool.begin().await?;
+
+        if p.perms.get(&user_id as &str).is_some() && p.perms.get(&user_id as &str).unwrap().perm_level == PermLevel::Edit {
+            // Cannot make anyone else owner
+            let mut bad_keys: Vec<String> = Vec::new();
+            for (user, perm) in &mut perms {
+                if perm.perm_level == PermLevel::Owner {
+                    bad_keys.push(user.clone().to_string());
+                }
+            }
+            for user in bad_keys {
+                let mut perm = perms.get(&user).unwrap().clone();
+                perm.perm_level = PermLevel::Edit;
+                perms.insert(user, perm);
+            }
+            // Editors cannot lower the permissions of other editors / owners
+            // (Other than themselves)
+            for (user, perm) in p.perms {
+                if (perm.perm_level == PermLevel::Edit || perm.perm_level == PermLevel::Owner) &&
+                        user != user_id {
+                    perms.insert(user, perm.clone());
+                }
+            }
+        }
+
+        // Delete all existing perms, then insert new perms
+        sqlx::query(r#"DELETE FROM music.playlist_perms WHERE id = $1;"#)
+            .bind(id).execute(&mut *tx).await?;
+
+        // Creator gets owner permission by default
+        sqlx::query(r#"INSERT INTO music.playlist_perms(id, user_id, perm_id) VALUES($1, $2, $3);"#)
+            .bind(id).bind(p.creator_id.clone()).bind(PermLevel::Owner)
+            .execute(&mut *tx).await?;
+
+        for (perm_user_id, val) in perms {
+            // Ignore playlist creator: Always owner permission as defined above
+            if perm_user_id == p.creator_id {
+                continue;
+            }
+
+            // Ignore users that don't exist
+            if sqlx::query(r#"SELECT * FROM users where id = $1;"#)
+                    .bind(perm_user_id.clone()).fetch_one(&self.pool).await
+                    .is_err() {
+                continue;
+            }
+
+            let result = sqlx::query(r#"INSERT INTO music.playlist_perms(id, user_id, perm_id) VALUES($1, $2, $3);"#)
+                .bind(id).bind(perm_user_id.clone()).bind(val.perm_level.clone())
+                .execute(&mut *tx).await;
+            if result.is_err() {
+                tx.rollback().await?;
+                return Err(result.unwrap_err());
+            }
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    pub async fn delete_playlist(&self, id: &Uuid) -> Result<(), sqlx::Error> {
         sqlx::query("DELETE FROM music.user_playlists WHERE id = $1;")
             .bind(id).execute(&self.pool).await?;
-        sqlx::query("DELETE FROM music.playlists WHERE id = $1 AND creator_id = $2;")
-            .bind(id).bind(user_id)
-            .execute(&self.pool).await?;
+        sqlx::query("DELETE FROM music.playlists WHERE id = $1;")
+            .bind(id).execute(&self.pool).await?;
         Ok(())
+    }
+
+    async fn get_user_perm(&self, user_id: &UserId, id: &Uuid) -> Result<PermLevel, sqlx::Error> {
+        let perms = sqlx::query("SELECT * FROM music.playlist_perms WHERE id = $1 AND user_id = $2")
+            .bind(id).bind(user_id)
+            .fetch_one(&self.pool).await?;
+        Ok(perms.get("perm_id"))
+    }
+
+    pub async fn can_user_view_playlist(&self, user_id: &UserId, id: &Uuid) -> Result<bool, sqlx::Error> {
+        let perm = self.get_user_perm(user_id, id).await?;
+        Ok(perm == PermLevel::View || perm == PermLevel::Edit || perm == PermLevel::Owner)
+    }
+
+    pub async fn can_user_edit_playlist(&self, user_id: &UserId, id: &Uuid) -> Result<bool, sqlx::Error> {
+        let perm = self.get_user_perm(user_id, id).await?;
+        Ok(perm == PermLevel::Edit || perm == PermLevel::Owner)
+    }
+
+    pub async fn is_user_owner_playlist(&self, user_id: &UserId, id: &Uuid) -> Result<bool, sqlx::Error> {
+        let perm = self.get_user_perm(user_id, id).await?;
+        Ok(perm == PermLevel::Owner)
     }
 
     pub async fn get_playlist(&self, user_id: &UserId, id: &Uuid)
                 -> Result<PlaylistDetails, sqlx::Error> {
-        // TODO: get perms
-        // TODO: also return whether you have this added
         let row = sqlx::query("SELECT * FROM music.playlists WHERE id = $1 LIMIT 1;")
             .bind(id).fetch_one(&self.pool).await?;
         let is_in_userlist = match sqlx::query("SELECT * FROM music.user_playlists WHERE id = $1 AND user_id = $2 LIMIT 1;")
@@ -113,13 +204,20 @@ impl PostgresHandler {
                 Ok(_) => true,
                 Err(_) => false
             };
+        let perms: HashMap<String, Perm> = sqlx::query("SELECT * FROM music.playlist_perms WHERE id = $1")
+            .bind(id).map(|row: PgRow| (
+                row.get("user_id"),
+                Perm { perm_level: row.get("perm_id") }
+            ))
+            .fetch_all(&self.pool).await.unwrap_or(Vec::new()).into_iter().collect();
 
         Ok(PlaylistDetails {
             id: row.get::<Uuid, &str>("id"),
             name: row.get::<String, &str>("name"),
             creator_id: row.get::<String, &str>("creator_id"),
             song_count: row.get::<i32, &str>("song_count"),
-            is_in_userlist: is_in_userlist
+            is_in_userlist: is_in_userlist,
+            perms
         })
     }
 

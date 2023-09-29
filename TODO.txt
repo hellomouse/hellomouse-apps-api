@@ -6,6 +6,7 @@ headers
 .wrap(middleware::DefaultHeaders::new().add(("X-Version", "0.2")))
     - https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html
 
+- de-duplicate perm helper
 
 
 future:
