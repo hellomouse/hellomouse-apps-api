@@ -28,7 +28,9 @@ pub struct ServerConfig {
     pub log: bool,
     pub login_cookie_valid_duration_seconds: u64,
     pub max_requests_per_delta: u64,
-    pub max_requests_delta_seconds: u64
+    pub max_requests_delta_seconds: u64,
+    pub user_uploads_dir: String,
+    pub user_uploads_dir_tmp: String
 }
 
 #[cached]

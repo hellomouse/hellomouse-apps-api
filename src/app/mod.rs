@@ -16,9 +16,11 @@ use crate::shared::util::config;
 
 use crate::shared::handlers::postgres_handler::PostgresHandler as SharedPostgresHandler;
 use crate::board::handlers::postgres_handler::PostgresHandler as BoardPostgresHandler;
+use crate::files::postgres_handler::PostgresHandler as FilesPostgresHandler;
 
 use crate::shared::app as shared_app;
 use crate::board::app as board_app;
+use crate::files::app as files_app;
 
 use crate::shared::types::app as app_types;
 
@@ -46,6 +48,9 @@ fn routes(app: &mut web::ServiceConfig) {
         .service(board_app::get_boards)
         .service(board_app::get_board)
         
+        // Files
+        .service(files_app::get_file)
+
         // Pins
         .service(board_app::create_pin)
         .service(board_app::modify_pin)
@@ -67,10 +72,12 @@ pub async fn start() -> std::io::Result<()> {
 
     let handler1 = SharedPostgresHandler::new().await.unwrap();
     let handler2 = BoardPostgresHandler::new().await.unwrap();
+    let handler3 = FilesPostgresHandler::new().await.unwrap();
 
 
     handler1.init().await.unwrap();
     handler2.init().await.unwrap();
+    handler3.init().await.unwrap();
 
     println!("starting HTTP server at http://localhost:{}", config::get_config().server.port);
 
@@ -84,6 +91,7 @@ pub async fn start() -> std::io::Result<()> {
         App::new()
             .app_data(Data::new(handler1.clone()))
             .app_data(Data::new(handler2.clone()))
+            .app_data(Data::new(handler3.clone()))
             .configure(routes)
             // .wrap(rate_limit_middleware)
             .wrap(IdentityMiddleware::default())
