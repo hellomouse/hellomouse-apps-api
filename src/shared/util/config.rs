@@ -11,7 +11,8 @@ use sqlx::postgres::{PgPoolOptions, PgPool};
 pub struct Config {
     pub database: DatabaseConfig,
     pub server: ServerConfig,
-    pub count: CountConfig
+    pub count: CountConfig,
+    pub music: MusicConfig
 }
 
 #[derive(Deserialize, Clone)]
@@ -38,6 +39,11 @@ pub struct ServerConfig {
     pub request_quota: u32,
     pub login_attempt_window: String,
     pub login_attempt_max_per_window: u32
+}
+
+#[derive(Deserialize, Clone)]
+pub struct MusicConfig {
+    pub max_songs_in_queue: u64 // Should match that of the UI
 }
 
 #[cached]

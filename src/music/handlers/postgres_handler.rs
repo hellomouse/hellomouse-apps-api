@@ -1,10 +1,12 @@
 use crate::shared::types::account::{UserId, Perm, PermLevel};
 use crate::shared::util::config;
-use crate::music::types::{Playlist, PlaylistDetails};
+use crate::music::types::{Playlist, PlaylistDetails, Song, SongAbridged};
 
 use std::collections::HashMap;
+use chrono;
 use chrono::Utc;
 use uuid::Uuid;
+use std::cmp;
 use sqlx::Row;
 use sqlx::postgres::{PgPool, PgRow};
 
@@ -48,22 +50,23 @@ impl PostgresHandler {
             UNIQUE(id, user_id)
         );"#).execute(&self.pool).await?;
 
-        sqlx::query(r#"
-        CREATE TABLE IF NOT EXISTS music.songs (
-            id uuid primary key unique,
-            artist text NOT NULL CHECK(length(artist) < 128 and length(artist) > 0),
-            title text NOT NULL CHECK(length(title) < 1024 and length(title) > 0),
-            created timestamptz NOT NULL,
-            description text NOT NULL CHECK(length(description) < 16192 and length(description) > 0),
-            lyrics text NOT NULL CHECK(length(lyrics) < 16192 and length(lyrics) > 0),
-            uploader_id text NOT NULL REFERENCES users(id)
-        );"#).execute(&self.pool).await?;
+        // sqlx::query(r#"
+        // CREATE TABLE IF NOT EXISTS music.songs (
+        //     id text primary key unique,
+        //     artist text NOT NULL CHECK(length(artist) < 128 and length(artist) > 0),
+        //     title text NOT NULL CHECK(length(title) < 1024 and length(title) > 0),
+        //     created timestamptz NOT NULL,
+        //     description text NOT NULL CHECK(length(description) < 16192 and length(description) >= 0),
+        //     lyrics text NOT NULL CHECK(length(lyrics) < 16192 and length(lyrics) >= 0),
+        //     uploader_id text NOT NULL REFERENCES users(id)
+        // );"#).execute(&self.pool).await?;
 
         sqlx::query(r#"
         CREATE TABLE IF NOT EXISTS music.playlist_songs (
             playlist_id uuid NOT NULL,
-            song_id uuid NOT NULL,
+            song_id text NOT NULL,
             adder_id text NOT NULL REFERENCES users(id),
+            created timestamptz NOT NULL,
             UNIQUE(playlist_id, song_id)
         );"#).execute(&self.pool).await?;
         Ok(())
@@ -173,25 +176,34 @@ impl PostgresHandler {
         Ok(())
     }
 
-    async fn get_user_perm(&self, user_id: &UserId, id: &Uuid) -> Result<PermLevel, sqlx::Error> {
+    async fn get_user_perm(&self, user_id: &UserId, id: &Uuid) -> Result<Option<PermLevel>, sqlx::Error> {
         let perms = sqlx::query("SELECT * FROM music.playlist_perms WHERE id = $1 AND user_id = $2")
             .bind(id).bind(user_id)
-            .fetch_one(&self.pool).await?;
-        Ok(perms.get("perm_id"))
+            .fetch_one(&self.pool).await;
+        Ok(match perms {
+            Ok(perms) => Some(perms.get("perm_id")),
+            Err(_) => None
+        })
     }
 
     pub async fn can_user_view_playlist(&self, user_id: &UserId, id: &Uuid) -> Result<bool, sqlx::Error> {
         let perm = self.get_user_perm(user_id, id).await?;
+        if perm.is_none() { return Ok(false); }
+        let perm = perm.unwrap();
         Ok(perm == PermLevel::View || perm == PermLevel::Edit || perm == PermLevel::Owner)
     }
 
     pub async fn can_user_edit_playlist(&self, user_id: &UserId, id: &Uuid) -> Result<bool, sqlx::Error> {
         let perm = self.get_user_perm(user_id, id).await?;
+        if perm.is_none() { return Ok(false); }
+        let perm = perm.unwrap();
         Ok(perm == PermLevel::Edit || perm == PermLevel::Owner)
     }
 
     pub async fn is_user_owner_playlist(&self, user_id: &UserId, id: &Uuid) -> Result<bool, sqlx::Error> {
         let perm = self.get_user_perm(user_id, id).await?;
+        if perm.is_none() { return Ok(false); }
+        let perm = perm.unwrap();
         Ok(perm == PermLevel::Owner)
     }
 
@@ -230,5 +242,92 @@ impl PostgresHandler {
                 name: row.get::<String, &str>("name")
             })
             .fetch_all(&self.pool).await?)
+    }
+
+    pub async fn can_add_songs(&self, user_id: &UserId, song_url_len: usize) -> Result<bool, sqlx::Error> {
+        let cmd = "music_download".to_string();
+        let count = sqlx::query("SELECT COUNT(*) FROM site.status WHERE requestor = $1 AND name = $2 AND status = 'queued';")
+            .bind(user_id.to_string()).bind(cmd)
+            .fetch_one(&self.pool).await?;
+        let count = count.get::<i64, &str>("count") as u64;
+        Ok(count + std::cmp::min(config::get_config().music.max_songs_in_queue, count + song_url_len as u64)
+            <= config::get_config().music.max_songs_in_queue as u64)
+    }
+
+    pub async fn add_songs_by_url(&self, user_id: &UserId, playlist_id: &Uuid, song_urls: &Vec<String>) -> Result<(), sqlx::Error> {
+        let now = chrono::offset::Utc::now();
+        let cmd = "music_add_urls_to_playlist".to_string();
+        let priority = 10;
+
+        // Limit count to insert
+        let end = std::cmp::min(config::get_config().music.max_songs_in_queue as usize, song_urls.len());
+        let song_urls = &song_urls[0..end];
+
+        // Downloads and adding to playlist will be done JS side
+        sqlx::query("INSERT INTO site.status VALUES($1, $2, $3, $4, $5, $6, $7, $8);")
+            .bind(Uuid::new_v4()).bind(now).bind(now).bind(cmd).bind(playlist_id.to_string() + "," + &song_urls.join(","))
+            .bind(user_id.to_string()).bind(priority).bind("queued")
+            .execute(&self.pool).await?;
+        sqlx::query("NOTIFY hellomouse_apps_site_update;")
+            .execute(&self.pool).await?;
+        Ok(())
+    }
+
+    pub async fn get_songs(&self, playlist_id: &Uuid, offset: Option<i32>, limit: Option<i32>) -> Result<Vec<SongAbridged>, sqlx::Error> {
+        let song_ids = sqlx::query("SELECT song_id FROM music.playlist_songs WHERE playlist_id = $1 ORDER BY created DESC OFFSET $2 LIMIT $3;")
+            .bind(playlist_id)
+            .bind(offset.unwrap_or(0) as i32)
+            .bind(cmp::min(100, limit.unwrap_or(20) as i32))
+            .map(|row: PgRow| row.get::<String, &str>("song_id"))
+            .fetch_all(&self.pool).await?;
+
+        let songs_with_meta = sqlx::query("SELECT * FROM video_meta WHERE id = ANY($1);")
+            .bind(song_ids.clone())
+            .map(|row: PgRow| SongAbridged {
+                id: row.get::<String, &str>("id"),
+                uploader: row.get::<String, &str>("uploader"),
+                title: row.get::<String, &str>("title"),
+                duration_string: row.get::<String, &str>("duration_string"),
+                thumbnail_file: row.get::<String, &str>("thumbnail_file")
+            })
+            .fetch_all(&self.pool).await?;
+
+        let mut tmp = HashMap::new();
+        for val in songs_with_meta.iter() {
+            tmp.insert(val.id.clone(), val);
+        }
+
+        let mut result = Vec::with_capacity(song_ids.len());
+        for val in song_ids {
+            result.push(match tmp.get(&val) {
+                Some(r) => (*r).clone(),
+                None => SongAbridged {
+                    id: val,
+                    uploader: "Unknown".to_string(),
+                    title: "Untitled".to_string(),
+                    duration_string: "0:00".to_string(),
+                    thumbnail_file: "".to_string(),
+                }
+            });
+        }
+        Ok(result)
+    }
+
+    pub async fn get_song(&self, song_id: &str) -> Result<Option<Song>, sqlx::Error> {
+        let row = sqlx::query("SELECT * FROM video_meta WHERE id = $1 LIMIT 1;")
+            .bind(song_id).fetch_one(&self.pool).await;
+        if row.is_err() { return Ok(None); }
+        let row = row.unwrap();
+        Ok(Some(Song {
+            uploader: row.get::<String, &str>("uploader"),
+            uploader_url: row.get::<String, &str>("uploader_url"),
+            upload_date: row.get::<chrono::DateTime<Utc>, &str>("upload_date"),
+            title: row.get::<String, &str>("title"),
+            duration_string: row.get::<String, &str>("duration_string"),
+            description: row.get::<String, &str>("description"),
+            thumbnail_file: row.get::<String, &str>("thumbnail_file"),
+            video_file: row.get::<String, &str>("video_file"),
+            subtitle_files: row.get::<Vec<String>, &str>("subtitle_files")
+        }))
     }
 }

@@ -27,3 +27,7 @@ login_attempt_max_per_window = 10
 [count]
 min_password_length = 8
 max_password_length = 32
+
+[music]
+# Should match UI
+max_songs_in_queue = 1000

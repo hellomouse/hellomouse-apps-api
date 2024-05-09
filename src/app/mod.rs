@@ -96,6 +96,9 @@ fn routes(app: &mut web::ServiceConfig) {
         .service(music_app::get_playlists)
         .service(music_app::add_user_playlist)
         .service(music_app::remove_user_playlist)
+        .service(music_app::add_songs_by_url)
+        .service(music_app::get_song)
+        .service(music_app::get_songs)
 
         // Site
         .service(site_app::get_pin_preview)
