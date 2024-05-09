@@ -38,16 +38,20 @@ pub struct FileResult {
     hash: String,
 }
 
+#[derive(Clone, Serialize)]
+pub struct FileUploadResult {
+    pub succeeded: Vec<String>,
+    pub failed: Vec<i8>
+}
+
 impl PostgresHandler {
     pub async fn init(&self) -> Result<(), sqlx::Error> {
         sqlx::query(r#"
         CREATE TABLE IF NOT EXISTS user_files (
             file_hash text primary key unique CHECK(
-              length(file_hash) = 64 
+                length(file_hash) = 64 
             ),
-            user_id text NOT NULL CHECK(
-              length(user_id) < 25 and user_id ~ '^[a-zA-Z0-9_]+$'
-            ),
+            user_id text NOT NULL REFERENCES users(id),
             original_name text NOT NULL CHECK(length(original_name) < 2048),
             file_extension text NOT NULL CHECK(length(file_extension) < 5),
             upload_date timestamp NOT NULL
@@ -90,7 +94,6 @@ impl PostgresHandler {
             .get::<String, &str>("file_extension");
 
         let file_path = format!("{}/{}{}.{}", self.user_uploads_dir, user_id, file_hash, file_extension);
-
         Ok(file_path)
     }
 
@@ -104,25 +107,30 @@ impl PostgresHandler {
     /// # Returns
     /// 
     /// * `Result` containing a `Vec<i8>` (Indexes of files that failed to upload)
-    pub async fn file_create(&self, user_id: &str, mut payload: Multipart) -> Result<Vec<i8>, Box<dyn Error>> {
+    pub async fn file_create(&self, user_id: &str, mut payload: Multipart) -> Result<FileUploadResult, Box<dyn Error>> {
+        macro_rules! file_cleanup {
+            ($current_path:expr, $async_file:expr, $failed_files:expr, $count:expr, $tx:ident) => {{
+                $async_file.shutdown().await.unwrap();
+                tokio::fs::remove_file($current_path).await.unwrap();
+                $failed_files.push($count);
+                $tx.rollback().await?;
+            }};
+        }
         macro_rules! file_cleanup_and_continue {
-            ($current_path:expr, $async_file:expr, $failed_files:expr, $count:expr) => {
-                {
-                    $async_file.shutdown().await.unwrap();
-                    tokio::fs::remove_file($current_path).await.unwrap();
-                    $failed_files.push($count);
-                    continue;
-                }
-            };
+            ($current_path:expr, $async_file:expr, $failed_files:expr, $count:expr, $tx:ident) => {{
+                file_cleanup!($current_path, $async_file, $failed_files, $count, $tx);
+                continue;
+             }};
         }
 
-        // collection storing indexs of files that failed to upload
         let mut failed_files: Vec<i8> = Vec::new();
+        let mut succeeded_files: Vec<String> = Vec::new();
+
         let mut count: i8 = -1;
         while let Some(item) = payload.next().await {
             count += 1;
             let mut field = item?;
-    
+
             let current_path = format!("{}/{}", self.user_uploads_dir_tmp, Uuid::new_v4().to_string());
             let mut async_file = match tokio::fs::File::create(&current_path).await {
                 Ok(f) => f,
@@ -153,43 +161,52 @@ impl PostgresHandler {
                     file_name = format!(".{}", file_name);
                 }
             }
-    
+
+            let mut tx = self.pool.begin().await?;
+            let mut errored_in_chunk = false;
+
             while let Some(chunk) = field.next().await {
                 match chunk {
                     Ok(chunk) => {
                         match async_file.write_all(&chunk).await {
                             Ok(_) => (),
-                            Err(_) => file_cleanup_and_continue!(&current_path, async_file, failed_files, count),
+                            Err(_) => {
+                                errored_in_chunk = true;
+                                break;
+                            }
                         }
                     },
-                    Err(_) => file_cleanup_and_continue!(&current_path, async_file, failed_files, count),
+                    Err(_) => {
+                        errored_in_chunk = true;
+                        break;
+                    }
                 };
-
             }
-    
-            if file_name.is_empty() || file_extension.is_empty() { file_cleanup_and_continue!(&current_path, async_file, failed_files, count); };
+            if errored_in_chunk { file_cleanup_and_continue!(&current_path, async_file, failed_files, count, tx); } // Already processed cleanup
+            if file_name.is_empty() || file_extension.is_empty() { file_cleanup_and_continue!(&current_path, async_file, failed_files, count, tx); };
     
             // copy the file to the user's uploads directory with the hashed filename
             let file_hash = Self::hash_file_name(&file_name);
             let file_path = format!("{}/{}{}.{}", self.user_uploads_dir, user_id, file_hash, file_extension);
     
-            if async_file.shutdown().await.is_err() { file_cleanup_and_continue!(&current_path, async_file, failed_files, count); }
-            if tokio::fs::rename(&current_path, &file_path).await.is_err() { file_cleanup_and_continue!(&current_path, async_file, failed_files, count); }
+            if async_file.shutdown().await.is_err() { file_cleanup_and_continue!(&current_path, async_file, failed_files, count, tx); }
 
-            // Add the file to the database
-            if let Err(err) = sqlx::query("INSERT INTO user_files (file_hash, user_id, original_name, file_extension, upload_date) VALUES ($1, $2, $3, $4, $5);")
+            let result = sqlx::query("INSERT INTO user_files (file_hash, user_id, original_name, file_extension, upload_date) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING;")
                 .bind(&file_hash)
                 .bind(user_id)
                 .bind(&file_name)
                 .bind(&file_extension)
                 .bind(chrono::Utc::now())
-                .execute(&self.pool).await {
-                    tokio::fs::remove_file(file_path).await.unwrap();
-                    return Err(err.into());
-                }
+                .execute(&mut *tx).await;
+            if result.is_err() { file_cleanup_and_continue!(&current_path, async_file, failed_files, count, tx); }
+
+            if tokio::fs::rename(&current_path, &file_path).await.is_err() { file_cleanup_and_continue!(&current_path, async_file, failed_files, count, tx); }
+
+            tx.commit().await?;
+            succeeded_files.push(file_path);
         }
-    
-        Ok(failed_files)
+
+        Ok(FileUploadResult { succeeded: succeeded_files, failed: failed_files })
     }
 
 }

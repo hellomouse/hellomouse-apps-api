@@ -11,7 +11,8 @@ use actix_web::{get, post, web::{self, Data}, HttpRequest, HttpResponse, Result}
 #[derive(Serialize,Debug)]
 struct FileUploadResponse {
     msg: String,
-    failed_files: Vec<i8>
+    succeeded: Vec<String>,
+    failed: Vec<i8>
 }
 
 #[post("/v1/files")]
@@ -26,8 +27,12 @@ async fn create_file(
         let upload_status = handler.file_create(&user_id, payload).await;
 
         return match upload_status {
-            Ok(failed_files) => Ok(HttpResponse::Ok().json(
-                FileUploadResponse { msg: "File upload result".to_string(), failed_files })),
+            Ok(result) => Ok(HttpResponse::Ok().json(
+                FileUploadResponse {
+                    msg: "File upload result".to_string(),
+                    succeeded: result.succeeded,
+                    failed: result.failed
+                })),
             Err(e) => {
                 eprintln!("Error: {:?}", e);
                 return Ok(HttpResponse::Ok().json(
