@@ -51,22 +51,19 @@ struct SingleFileSearch {
 }
 
 #[get("/v1/files/single")]
-async fn get_file(handler: Data<PostgresHandler>, identity: Option<Identity>, body: web::Query<SingleFileSearch>, req: HttpRequest) -> Result<HttpResponse> {
-    if identity.is_some() {
-        let json_data = body.into_inner();
-        let file_path = handler.file_exists(&json_data.id).await;
+async fn get_file(handler: Data<PostgresHandler>, body: web::Query<SingleFileSearch>, req: HttpRequest) -> Result<HttpResponse> {
+    let json_data = body.into_inner();
+    let file_path = handler.file_exists(&json_data.id).await;
 
-        match file_path {
-            Ok(file_path) => {
-                let file = actix_files::NamedFile::open_async(file_path).await.unwrap();
-                return Ok(file.into_response(&req));
-            },
-            Err(_) => {
-                return Ok(HttpResponse::Ok().json(ErrorResponse { error: "Not found".to_string() }))
-            }
-        };
-    }
-    login_fail!();
+    match file_path {
+        Ok(file_path) => {
+            let file = actix_files::NamedFile::open_async(file_path).await.unwrap();
+            return Ok(file.into_response(&req));
+        },
+        Err(_) => {
+            return Ok(HttpResponse::Ok().json(ErrorResponse { error: "Not found".to_string() }))
+        }
+    };
 }
 
 #[derive(Deserialize,Debug)]
