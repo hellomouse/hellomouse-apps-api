@@ -36,6 +36,7 @@ impl PostgresHandler {
 pub struct FileResult {
     file_name: String,
     hash: String,
+    file_extension: String
 }
 
 #[derive(Clone, Serialize)]
@@ -62,10 +63,9 @@ impl PostgresHandler {
 
         Ok(())
     }
-
     pub async fn get_files(&self, user_id: &str, offset: u32, limit: u32) -> Result<Vec<FileResult>, sqlx::Error> {
         let mut files: Vec<FileResult> = Vec::new();
-        let mut query = sqlx::query("SELECT original_name, file_hash FROM user_files WHERE user_id = $1 ORDER BY upload_date DESC OFFSET $2 LIMIT $3;")
+        let mut query = sqlx::query("SELECT original_name, file_hash, file_extension FROM user_files WHERE user_id = $1 ORDER BY upload_date DESC OFFSET $2 LIMIT $3;")
             .bind(user_id)
             .bind(offset as i32)
             .bind(cmp::min(100, limit as i32))
@@ -76,6 +76,7 @@ impl PostgresHandler {
             files.push(FileResult {
                 file_name: row.get(0),
                 hash: row.get(1),
+                file_extension: row.get(2),
             });
         }
 
