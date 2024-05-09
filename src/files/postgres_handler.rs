@@ -1,12 +1,15 @@
-use crate::shared::util::config::{self, Config};
-use crate::shared::types::account::{Account, UserId};
+use std::error::Error;
 
-use serde_json::Value;
+use crate::shared::util::config::{self};
+
+use actix_multipart::Multipart;
+use futures::StreamExt;
 use serde::Serialize;
-use json_value_merge::Merge;
 use sqlx::Row;
-use sqlx::postgres::{PgRow, PgPool};
+use sqlx::postgres::PgPool;
 use sha2::{Sha256, Digest};
+use tokio::io::AsyncWriteExt;
+use uuid::Uuid;
 
 #[derive(Clone, Serialize)]
 pub struct UserSearchResult {
@@ -45,6 +48,7 @@ impl PostgresHandler {
           );"#).execute(&self.pool).await?;
 
         tokio::fs::create_dir_all(&self.user_uploads_dir).await.unwrap();
+        tokio::fs::create_dir_all(&self.user_uploads_dir_tmp).await.unwrap();
 
         Ok(())
     }
@@ -63,6 +67,95 @@ impl PostgresHandler {
         let file_path = format!("{}/{}{}.{}", self.user_uploads_dir, user_id, file_hash, file_extension);
 
         Ok(file_path)
+    }
+
+    /// Create a file in the database and move it to the user's uploads directory
+    /// 
+    /// # Arguments
+    /// 
+    /// * `user_id` - The user's id
+    /// * `payload` - The file to be uploaded
+    /// 
+    /// # Returns
+    /// 
+    /// * `Result` containing a `Vec<i8>` (Indexes of files that failed to upload)
+    pub async fn file_create(&self, user_id: &str, mut payload: Multipart) -> Result<Vec<i8>, Box<dyn Error>> {
+        macro_rules! file_cleanup_and_continue {
+            ($current_path:expr, $async_file:expr, $failed_files:expr, $count:expr) => {
+                {
+                    $async_file.shutdown().await.unwrap();
+                    tokio::fs::remove_file($current_path).await.unwrap();
+                    $failed_files.push($count);
+                    continue;
+                }
+            };
+        }
+
+        // collection storing indexs of files that failed to upload
+        let mut failed_files: Vec<i8> = Vec::new();
+        let mut count: i8 = -1;
+        while let Some(item) = payload.next().await {
+            count += 1;
+            let mut field = item?;
+    
+            let current_path = format!("{}/{}", self.user_uploads_dir_tmp, Uuid::new_v4().to_string());
+            let mut async_file = match tokio::fs::File::create(&current_path).await {
+                Ok(f) => f,
+                Err(e) => {
+                    continue;
+                }
+            };
+    
+            let mut file_name = String::new();
+            let mut file_extension = String::new();
+    
+            if let Some(filename) = field.content_disposition().get_filename() {
+                let mut parts: Vec<&str> = filename.rsplit('.').collect();
+                match parts.len() {
+                    2 => {
+                        file_name = parts.pop().unwrap().to_string();
+                        file_extension = parts.pop().unwrap().to_string();
+                    },
+                    _ => file_cleanup_and_continue!(&current_path, async_file, failed_files, count)
+                }
+            }
+    
+            while let Some(chunk) = field.next().await {
+                match chunk {
+                    Ok(chunk) => {
+                        match async_file.write_all(&chunk).await {
+                            Ok(_) => (),
+                            Err(_) => file_cleanup_and_continue!(&current_path, async_file, failed_files, count),
+                        }
+                    },
+                    Err(_) => file_cleanup_and_continue!(&current_path, async_file, failed_files, count),
+                };
+
+            }
+    
+            if file_name.is_empty() || file_extension.is_empty() { file_cleanup_and_continue!(&current_path, async_file, failed_files, count); };
+    
+            // copy the file to the user's uploads directory with the hashed filename
+            let file_hash = Self::hash_file_name(&file_name);
+            let file_path = format!("{}/{}{}.{}", self.user_uploads_dir, user_id, file_hash, file_extension);
+    
+            if async_file.shutdown().await.is_err() { file_cleanup_and_continue!(&current_path, async_file, failed_files, count); }
+            if tokio::fs::rename(&current_path, &file_path).await.is_err() { file_cleanup_and_continue!(&current_path, async_file, failed_files, count); }
+
+            // Add the file to the database
+            if let Err(err) = sqlx::query("INSERT INTO user_files (file_hash, user_id, original_name, file_extension, upload_date) VALUES ($1, $2, $3, $4, $5);")
+                .bind(&file_hash)
+                .bind(user_id)
+                .bind(&file_name)
+                .bind(&file_extension)
+                .bind(chrono::Utc::now())
+                .execute(&self.pool).await {
+                    tokio::fs::remove_file(file_path).await.unwrap();
+                    return Err(err.into());
+                }
+        }
+    
+        Ok(failed_files)
     }
 
 }

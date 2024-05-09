@@ -49,6 +49,7 @@ fn routes(app: &mut web::ServiceConfig) {
         .service(board_app::get_board)
         
         // Files
+        .service(files_app::create_file)
         .service(files_app::get_file)
 
         // Pins
