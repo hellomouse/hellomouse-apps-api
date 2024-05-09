@@ -65,3 +65,30 @@ async fn get_file(handler: Data<PostgresHandler>, identity: Option<Identity>, bo
     }
     login_fail!();
 }
+
+#[derive(Deserialize,Debug)]
+struct FileSearch {
+    offset: Option<i64>,
+    limit: Option<i64>
+}
+
+#[get("/v1/files")]
+async fn get_files(handler: Data<PostgresHandler>, identity: Option<Identity>, body: web::Query<FileSearch>) -> Result<HttpResponse> {
+    if identity.is_some() {
+        let json_data = body.into_inner();
+        let offset = json_data.offset.unwrap_or(0);
+        let limit = json_data.limit.unwrap_or(20);
+        let user_id = identity.unwrap().id().unwrap();
+        let files_result = handler.get_files(&user_id, offset, limit).await;
+
+        match files_result {
+            Ok(files) => {
+                return Ok(HttpResponse::Ok().json(files));
+            },
+            Err(_) => {
+                return Ok(HttpResponse::NotFound().json(ErrorResponse { error: "Not found".to_string() }));
+            }
+        }
+    }
+    login_fail!();
+}

@@ -32,6 +32,12 @@ impl PostgresHandler {
     }
 }
 
+#[derive(Clone, Serialize)]
+pub struct FileResult {
+    file_name: String,
+    hash: String,
+}
+
 impl PostgresHandler {
     pub async fn init(&self) -> Result<(), sqlx::Error> {
         sqlx::query(r#"
@@ -51,6 +57,25 @@ impl PostgresHandler {
         tokio::fs::create_dir_all(&self.user_uploads_dir_tmp).await.unwrap();
 
         Ok(())
+    }
+
+    pub async fn get_files(&self, user_id: &str, offset: i64, limit: i64) -> Result<Vec<FileResult>, sqlx::Error> {
+        let mut files: Vec<FileResult> = Vec::new();
+        let mut query = sqlx::query("SELECT original_name, file_hash FROM user_files WHERE user_id = $1 ORDER BY upload_date DESC OFFSET $2 LIMIT $3;")
+            .bind(user_id)
+            .bind(offset)
+            .bind(limit)
+            .fetch(&self.pool);
+
+        while let Some(row) = query.next().await {
+            let row = row?;
+            files.push(FileResult {
+                file_name: row.get(0),
+                hash: row.get(1),
+            });
+        }
+
+        Ok(files)
     }
 
     fn hash_file_name(file_name: &str) -> String {
