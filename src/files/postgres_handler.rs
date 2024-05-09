@@ -42,7 +42,7 @@ pub struct FileResult {
 #[derive(Clone, Serialize)]
 pub struct FileUploadResult {
     pub succeeded: Vec<String>,
-    pub failed: Vec<i8>
+    pub failed: Vec<u8>
 }
 
 impl PostgresHandler {
@@ -118,18 +118,25 @@ impl PostgresHandler {
             }};
         }
         macro_rules! file_cleanup_and_continue {
-            ($current_path:expr, $async_file:expr, $failed_files:expr, $count:expr, $tx:ident) => {{
+            ($current_path:expr, $async_file:expr, $failed_files:expr, $count:ident, $tx:ident) => {{
                 file_cleanup!($current_path, $async_file, $failed_files, $count, $tx);
+                $count += 1;
                 continue;
              }};
         }
 
-        let mut failed_files: Vec<i8> = Vec::new();
+        let mut failed_files: Vec<u8> = Vec::new();
         let mut succeeded_files: Vec<String> = Vec::new();
 
-        let mut count: i8 = -1;
+        let mut count: u8 = 0;
         while let Some(item) = payload.next().await {
-            count += 1;
+            if count == 50 {
+                while let Some(_) = payload.next().await {
+                    failed_files.push(count)
+                }
+                return Ok(FileUploadResult { succeeded: succeeded_files, failed: failed_files });
+            }
+
             let mut field = item?;
 
             let current_path = format!("{}/{}", self.user_uploads_dir_tmp, Uuid::new_v4().to_string());
@@ -205,6 +212,8 @@ impl PostgresHandler {
 
             tx.commit().await?;
             succeeded_files.push(file_path);
+
+            count += 1;
         }
 
         Ok(FileUploadResult { succeeded: succeeded_files, failed: failed_files })

@@ -12,7 +12,7 @@ use actix_web::{get, post, web::{self, Data}, HttpRequest, HttpResponse, Result}
 struct FileUploadResponse {
     msg: String,
     succeeded: Vec<String>,
-    failed: Vec<i8>
+    failed: Vec<u8>
 }
 
 #[post("/v1/files")]
