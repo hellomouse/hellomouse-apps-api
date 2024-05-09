@@ -73,8 +73,8 @@ async fn get_file(handler: Data<PostgresHandler>, identity: Option<Identity>, bo
 
 #[derive(Deserialize,Debug)]
 struct FileSearch {
-    offset: Option<i64>,
-    limit: Option<i64>
+    offset: Option<u32>,
+    limit: Option<u32>
 }
 
 #[get("/v1/files")]

@@ -1,7 +1,7 @@
 use crate::shared::handlers::postgres_handler::{PostgresHandler, UserSearchResult};
 use crate::shared::types::app::{ErrorResponse, Response, login_fail};
 
-use actix_identity::{Identity};
+use actix_identity::Identity;
 use actix_web::{
     get, post, put, HttpResponse, web::{self, Data},
     HttpMessage as _, HttpRequest, Result
