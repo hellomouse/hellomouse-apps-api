@@ -75,12 +75,12 @@ pub fn get_config() -> Config {
         }
     };
 
-    let data: Config = match toml::from_str(&contents) {
+    let data: Result<Config, toml::de::Error> = toml::from_str(&contents);
+    match data {
         Ok(d) => d,
-        Err(_) => {
-            eprintln!("Unable to load data from config");
+        Err(e) => {
+            eprintln!("Unable to load data from config: {}", e);
             exit(1);
         }
-    };
-    return data;
+    }
 }
