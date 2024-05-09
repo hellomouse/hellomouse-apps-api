@@ -2,59 +2,19 @@ note: json merge will keep old keys, maybe just overwrite and keep defaults?
 
 safe cors
 
-limit size of metadata and settings jsons
+headers
+.wrap(middleware::DefaultHeaders::new().add(("X-Version", "0.2")))
+    - https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html
 
-config:
-    limit board counts
-
-limit password length
-
-make pins flag actually order pins
-
-
-https://docs.rs/html_sanitizer/latest/html_sanitizer/
-
-pin interact endpoint
-
-
-checklist pins
-
-limit login attempts
-
-endpoint for adding web pages maybe?
-
-on timeout - instead of rejecting the request, return timeout
-
-
-move routes to each module -> call configure for each
-
-Name + desc should be stripped of HTML + length limited
-
-write tests for public + 2 users
-
-write list of tests for pins for 2 people
-
-
-tests:
-env variables, ...
-
-better test config: api base path
-
-
-
-
-
-
+- de-duplicate perm helper
 
 
 future:
-add ability to favorite boards / pins
 
 make a file upload API
 https://crates.io/crates/actix-multipart-extract
 https://users.rust-lang.org/t/file-upload-in-actix-web/64871/3
 
-better sorting for search results
 
 API for updating PFP
 
@@ -62,14 +22,6 @@ https://datatracker.ietf.org/doc/html/rfc7617
 https://www.lpalmieri.com/posts/password-authentication-in-rust/
 https://libpasta.github.io/introduction/basic-usage/
 
-idea of metadata:
-- first user sets a "legal_keys": key -> an array
-- future users add to the array
-
-make parameter names all good, like create_account
-
-tags or hashtags for notes
-- detect hashtags and allow sorting by
-
-
-trash users
+security:
+add pepper?
+totp?

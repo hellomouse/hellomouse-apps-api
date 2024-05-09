@@ -10,7 +10,15 @@ use sqlx::postgres::{PgPoolOptions, PgPool};
 #[derive(Deserialize, Clone)]
 pub struct Config {
     pub database: DatabaseConfig,
-    pub server: ServerConfig
+    pub server: ServerConfig,
+    pub count: CountConfig,
+    pub music: MusicConfig
+}
+
+#[derive(Deserialize, Clone)]
+pub struct CountConfig {
+    pub min_password_length: usize,
+    pub max_password_length: usize
 }
 
 #[derive(Deserialize, Clone)]
@@ -27,10 +35,18 @@ pub struct ServerConfig {
     pub port: u16,
     pub log: bool,
     pub login_cookie_valid_duration_seconds: u64,
-    pub max_requests_per_delta: u64,
-    pub max_requests_delta_seconds: u64,
+
     pub user_uploads_dir: String,
-    pub user_uploads_dir_tmp: String
+    pub user_uploads_dir_tmp: String,
+    pub request_quota_replenish_ms: u64,
+    pub request_quota: u32,
+    pub login_attempt_window: String,
+    pub login_attempt_max_per_window: u32
+}
+
+#[derive(Deserialize, Clone)]
+pub struct MusicConfig {
+    pub max_songs_in_queue: u64 // Should match that of the UI
 }
 
 #[cached]

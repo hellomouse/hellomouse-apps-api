@@ -34,3 +34,18 @@ impl std::fmt::Display for SortBoard {
         }
     }
 }
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct MassBoardShareUser {
+    pub name: String,
+    pub perm: account::Perm
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Tag {
+    pub name: String,
+    pub id: i32,
+    pub creator_id: String,
+    pub color: String,
+    pub board_ids: Vec<Uuid>
+}

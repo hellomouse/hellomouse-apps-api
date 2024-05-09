@@ -10,7 +10,7 @@ pub enum PinType {
     Markdown = 0,
     ImageGallery = 1,
     Link = 2,
-    Review = 3
+    Checklist = 3
 }
 
 // IMPORTANT: Even though it's implemented as a u64
@@ -37,6 +37,38 @@ pub struct Pin {
     pub creator: String,
     pub created: chrono::DateTime<Utc>,
     pub edited: chrono::DateTime<Utc>,
+    pub flags: PinFlags,
+    pub attachment_paths: Vec<String>,
+    pub metadata: Value
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub enum SortPin {
+    Created,
+    Edited
+}
+
+impl std::fmt::Display for SortPin {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            SortPin::Created => write!(f, "created"),
+            SortPin::Edited => write!(f, "edited"),
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct PinHistoryAbridged {
+    pub editor: String,
+    pub time: chrono::DateTime<Utc>,
+    pub id: i32
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct PinHistory {
+    pub editor: String,
+    pub time: chrono::DateTime<Utc>,
+    pub content: String,
     pub flags: PinFlags,
     pub attachment_paths: Vec<String>,
     pub metadata: Value

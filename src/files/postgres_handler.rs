@@ -101,7 +101,7 @@ impl PostgresHandler {
             let current_path = format!("{}/{}", self.user_uploads_dir_tmp, Uuid::new_v4().to_string());
             let mut async_file = match tokio::fs::File::create(&current_path).await {
                 Ok(f) => f,
-                Err(e) => {
+                Err(_e) => {
                     continue;
                 }
             };
@@ -110,13 +110,22 @@ impl PostgresHandler {
             let mut file_extension = String::new();
     
             if let Some(filename) = field.content_disposition().get_filename() {
-                let mut parts: Vec<&str> = filename.rsplit('.').collect();
-                match parts.len() {
-                    2 => {
-                        file_name = parts.pop().unwrap().to_string();
-                        file_extension = parts.pop().unwrap().to_string();
+                let parts = filename.split_once('.');
+                match parts {
+                    Some(_) => { // File contained a ., such as test.tar.gz -> test and tar.gz
+                        file_name = parts.unwrap().0.to_string();
+                        file_extension = parts.unwrap().1.to_string();
                     },
-                    _ => file_cleanup_and_continue!(&current_path, async_file, failed_files, count)
+                    None => { // File does not have an extension, ie 'file'
+                        file_name = filename.to_string();
+                        file_extension = "".to_string();
+                    }
+                }
+
+                // If the filename is empty and the extension is not, swap them
+                if file_name.is_empty() && !file_extension.is_empty() {
+                    std::mem::swap(&mut file_name, &mut file_extension);
+                    file_name = format!(".{}", file_name);
                 }
             }
     

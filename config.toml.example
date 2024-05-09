@@ -14,9 +14,24 @@ log = true
 # How long the login cookie is valid for
 login_cookie_valid_duration_seconds = 4294967295
 
-# Rate limiting: at most max_requests_per_delta requests
-# per max_requests_delta_seconds, for example the values below
-# mean at most 100 requests / 60 seconds (1 min)
-# (per ip address)
-max_requests_per_delta = 100
-max_requests_delta_seconds = 60
+# Rate limiting: quota is max requests. Every request_quota_replenish_ms
+# ms the quota will be replenished by one
+request_quota_replenish_ms = 500
+request_quota = 10
+
+# Window should be a postgres interval, limit attempts to
+# this many (failed attempts) per window
+login_attempt_window = "10 minutes"
+login_attempt_max_per_window = 10
+
+# Where to store files
+user_uploads_dir = "/files"
+user_uploads_dir_tmp = "files/tmp"
+
+[count]
+min_password_length = 8
+max_password_length = 32
+
+[music]
+# Should match UI
+max_songs_in_queue = 1000

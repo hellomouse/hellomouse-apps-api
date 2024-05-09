@@ -7,7 +7,6 @@ use actix_web::{
     HttpMessage as _, HttpRequest, Result
 };
 
-use std::sync::Mutex;
 use serde::{Serialize, Deserialize};
 use serde_json::Value;
 
@@ -20,8 +19,19 @@ struct LoginForm {
 
 #[post("/v1/login")]
 async fn login(handler: Data<PostgresHandler>, req: HttpRequest, info: web::Json<LoginForm>) -> Result<HttpResponse> {
+    let mut ip = "".to_string();
+    if let Some(socket_addr) = req.peer_addr() {
+        ip = format!("{:?}", socket_addr.ip());
+    }
+
+    let should_ratelimit = handler.should_ratelimit(info.username.as_str(), ip.as_str()).await.unwrap();
+    if should_ratelimit {
+        return Ok(HttpResponse::TooManyRequests().json(
+            ErrorResponse{ error: "Too many failed login attempts try again later".to_string() }));
+    }
+
     if !handler
-        .can_login(info.username.as_str(), info.password.as_str()).await.unwrap() { login_fail!() }
+        .can_login(info.username.as_str(), info.password.as_str(), ip.as_str()).await.unwrap() { login_fail!() }
     Identity::login(&req.extensions(), info.username.as_str().to_owned()).unwrap();
     Ok(HttpResponse::Ok().json(Response { msg: "You logged in".to_string() }))
 }
@@ -105,7 +115,7 @@ struct BatchUserParams { ids: String }
 async fn users_batch(handler: Data<PostgresHandler>, identity: Option<Identity>, params: web::Query<BatchUserParams>) -> Result<HttpResponse> {
     if identity.is_some() {
         let ids = params.ids.split(',').map(|s| s.to_string()).collect();
-        return match handler.get_users_batch(ids).await {
+        return match handler.get_users_batch(&ids).await {
             Ok(result) => Ok(HttpResponse::Ok().json(UserSearchParamsReturn { users: result })),
             Err(_err) => Ok(HttpResponse::Forbidden().json(ErrorResponse{ error: "Could not get users".to_string() }))
         };

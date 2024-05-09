@@ -8,8 +8,6 @@ use crate::shared::types::app::{ErrorResponse, Response, login_fail};
 use actix_identity::Identity;
 use actix_web::{get, post, web::{self, Data}, HttpRequest, HttpResponse, Result};
 
-
-
 #[derive(Serialize,Debug)]
 struct FileUploadResponse {
     msg: String,
@@ -20,7 +18,7 @@ struct FileUploadResponse {
 async fn create_file(
     identity: Option<Identity>,
     handler: web::Data<PostgresHandler>,
-    mut payload: Multipart,
+    payload: Multipart,
 ) -> Result<HttpResponse> {
     if let Some(identity) = identity{
         let user_id = identity.id().unwrap();
@@ -28,10 +26,12 @@ async fn create_file(
         let upload_status = handler.file_create(&user_id, payload).await;
 
         return match upload_status {
-            Ok(failed_files) => Ok(HttpResponse::Ok().json(FileUploadResponse { msg: "File upload result".to_string(), failed_files })),
+            Ok(failed_files) => Ok(HttpResponse::Ok().json(
+                FileUploadResponse { msg: "File upload result".to_string(), failed_files })),
             Err(e) => {
                 eprintln!("Error: {:?}", e);
-                return Ok(HttpResponse::Ok().json(Response { msg: "File upload failed".to_string() }));
+                return Ok(HttpResponse::Ok().json(
+                    ErrorResponse { error: "File upload failed".to_string() }));
             }
         }
     }
@@ -59,11 +59,9 @@ async fn get_file(handler: Data<PostgresHandler>, identity: Option<Identity>, bo
                 return Ok(file.into_response(&req));
             },
             Err(_) => {
-                return Ok(HttpResponse::Ok().json(Response { msg: "Not found".to_string() }))
+                return Ok(HttpResponse::Ok().json(ErrorResponse { error: "Not found".to_string() }))
             }
-
         };
     }
     login_fail!();
-
 }
