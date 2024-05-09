@@ -15,10 +15,6 @@ make a file upload API
 https://crates.io/crates/actix-multipart-extract
 https://users.rust-lang.org/t/file-upload-in-actix-web/64871/3
 
-bug: max 255 files
-
-get files: limit limit
-
 
 API for updating PFP
 
