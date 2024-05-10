@@ -35,7 +35,8 @@ impl PostgresHandler {
 pub struct FileResult {
     id: Uuid,
     file_name: String,
-    file_extension: String
+    file_extension: String,
+    file_size: i64
 }
 
 #[derive(Clone, Serialize)]
@@ -52,7 +53,8 @@ impl PostgresHandler {
             user_id text NOT NULL REFERENCES users(id),
             original_name text NOT NULL CHECK(length(original_name) < 2048),
             file_extension text NOT NULL CHECK(length(file_extension) < 5),
-            upload_date timestamp NOT NULL
+            upload_date timestamp NOT NULL,
+            file_size bigint NOT NULL
           );"#).execute(&self.pool).await?;
 
         tokio::fs::create_dir_all(&self.user_uploads_dir).await.unwrap();
@@ -62,7 +64,7 @@ impl PostgresHandler {
     }
     pub async fn get_files(&self, user_id: &str, offset: u32, limit: u32) -> Result<Vec<FileResult>, sqlx::Error> {
         let mut files: Vec<FileResult> = Vec::new();
-        let mut query = sqlx::query("SELECT id, original_name, file_extension FROM user_files WHERE user_id = $1 ORDER BY upload_date DESC OFFSET $2 LIMIT $3;")
+        let mut query = sqlx::query("SELECT id, original_name, file_extension, file_size FROM user_files WHERE user_id = $1 ORDER BY upload_date DESC OFFSET $2 LIMIT $3;")
             .bind(user_id)
             .bind(offset as i32)
             .bind(cmp::min(100, limit as i32))
@@ -74,6 +76,7 @@ impl PostgresHandler {
                 id: row.get(0),
                 file_name: row.get(1),
                 file_extension: row.get(2),
+                file_size: row.get(3)
             });
         }
 
@@ -203,12 +206,20 @@ impl PostgresHandler {
 
             if async_file.shutdown().await.is_err() { file_cleanup_and_continue!(&current_path, async_file, failed_files, count, tx); }
 
-            let result = sqlx::query("INSERT INTO user_files (id, user_id, original_name, file_extension, upload_date) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING;")
+            let file_size: u64;
+            let file_metadata = async_file.metadata().await;
+            match file_metadata {
+                Ok(data) => { file_size = data.len(); },
+                Err(_) => { file_cleanup_and_continue!(&current_path, async_file, failed_files, count, tx); }
+            };
+
+            let result = sqlx::query("INSERT INTO user_files (id, user_id, original_name, file_extension, upload_date, file_size) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING;")
                 .bind(&file_id)
                 .bind(user_id)
                 .bind(&file_name)
                 .bind(&file_extension)
                 .bind(chrono::Utc::now())
+                .bind(file_size as i64)
                 .execute(&mut *tx).await;
             if result.is_err() { file_cleanup_and_continue!(&current_path, async_file, failed_files, count, tx); }
 

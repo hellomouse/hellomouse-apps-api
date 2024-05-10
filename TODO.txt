@@ -16,7 +16,6 @@ https://crates.io/crates/actix-multipart-extract
 https://users.rust-lang.org/t/file-upload-in-actix-web/64871/3
 
 
-delete file api
 
 API for updating PFP
 
