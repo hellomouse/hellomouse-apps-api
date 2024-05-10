@@ -3,10 +3,10 @@ use actix_multipart::Multipart;
 use serde::{Deserialize, Serialize};
 
 use crate::files::postgres_handler::PostgresHandler;
-use crate::shared::types::app::{ErrorResponse, login_fail};
+use crate::shared::types::app::{ErrorResponse, Response, login_fail};
 
 use actix_identity::Identity;
-use actix_web::{get, post, web::{self, Data}, HttpRequest, HttpResponse, Result};
+use actix_web::{get, post, delete, web::{self, Data}, HttpRequest, HttpResponse, Result};
 use uuid::Uuid;
 
 #[derive(Serialize,Debug)]
@@ -64,6 +64,21 @@ async fn get_file(handler: Data<PostgresHandler>, body: web::Query<SingleFileSea
             return Ok(HttpResponse::Ok().json(ErrorResponse { error: "Not found".to_string() }))
         }
     };
+}
+
+#[delete("/v1/files/single")]
+async fn delete_file(handler: Data<PostgresHandler>, identity: Option<Identity>, body: web::Json<SingleFileSearch>) -> Result<HttpResponse> {
+    if let Some(identity) = identity {
+        let logged_in_id = identity.id().unwrap().to_owned();
+        let json_data = body.into_inner();
+        let result = handler.delete_file(&logged_in_id, &json_data.id).await;
+
+        match result {
+            Ok(_) => { return Ok(HttpResponse::Ok().json(Response { msg: "Deleted".to_string() })); },
+            Err(_) => { return Ok(HttpResponse::Ok().json(ErrorResponse { error: "Failed to delete".to_string() })) }
+        };
+    }
+    login_fail!();
 }
 
 #[derive(Deserialize,Debug)]

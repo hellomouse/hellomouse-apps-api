@@ -91,6 +91,21 @@ impl PostgresHandler {
         Ok(file_path)
     }
 
+    pub async fn delete_file(&self, user_id: &String, id: &Uuid) -> Result<(), sqlx::Error> {
+        let row = sqlx::query("SELECT user_id, file_extension FROM user_files WHERE id = $1 AND user_id = $2;")
+            .bind(id).bind(user_id)
+            .fetch_one(&self.pool).await?;
+        let file_extension = row.get::<String, &str>("file_extension");
+        let user_id = row.get::<String, &str>("user_id");
+        let file_path = format!("{}/{}/{}.{}", self.user_uploads_dir, user_id, id.to_string(), file_extension);
+
+        tokio::fs::remove_file(file_path).await.unwrap();
+        sqlx::query("DELETE FROM user_files WHERE id = $1;")
+            .bind(id).execute(&self.pool).await?;
+
+        Ok(())
+    }
+
     /// Create a file in the database and move it to the user's uploads directory
     /// 
     /// # Arguments
@@ -151,31 +166,9 @@ impl PostgresHandler {
             let mut file_extension = String::new();
     
             if let Some(filename) = field.content_disposition().get_filename() {
-                // Note: this treats file extensions differently than say std::path
-                // Examples:
-                //   file.txt        -> file       .txt
-                //   .example.tar.gz -> .example   .tar.gz
-                //   file.tar.gz     -> file       .tar.gz
-                //   file            -> file       <empty>
-                //   .file           -> .file      <empty>
-
-                let parts = filename.split_once('.');
-                match parts {
-                    Some(_) => { // File contained a ., such as test.tar.gz -> test and tar.gz
-                        file_name = parts.unwrap().0.to_string();
-                        file_extension = parts.unwrap().1.to_string();
-                    },
-                    None => { // File does not have an extension, ie 'file'
-                        file_name = filename.to_string();
-                        file_extension = "".to_string();
-                    }
-                }
-
-                // If the filename is empty and the extension is not, swap them
-                if file_name.is_empty() && !file_extension.is_empty() {
-                    std::mem::swap(&mut file_name, &mut file_extension);
-                    file_name = format!(".{}", file_name);
-                }
+                let path = Path::new(&filename);
+                file_name = path.file_stem().unwrap().to_string_lossy().to_string();
+                file_extension = path.extension().unwrap().to_string_lossy().to_string();
             }
 
             let mut tx = self.pool.begin().await?;
