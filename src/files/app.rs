@@ -45,6 +45,47 @@ async fn create_file(
     login_fail!();
 }
 
+#[post("/v1/files/pfp")]
+async fn create_pfp(
+    identity: Option<Identity>,
+    handler: web::Data<PostgresHandler>,
+    payload: Multipart,
+) -> Result<HttpResponse> {
+    if let Some(identity) = identity{
+        let user_id = identity.id().unwrap();
+        // Create the file using the handler
+        let upload_status = handler.pfp_create(&user_id, payload).await;
+
+        return match upload_status {
+            Ok(_) => Ok(HttpResponse::Ok().json(
+                Response { msg: "Profile picture uploaded".to_string() })),
+            Err(e) => {
+                eprintln!("Error: {:?}", e);
+                return Ok(HttpResponse::Ok().json(
+                    ErrorResponse { error: "Profile picture upload failed".to_string() }));
+            }
+        }
+    }
+    login_fail!();
+}
+
+#[derive(Deserialize,Debug)]
+struct SinglePFPSearch {
+    id: String
+}
+
+#[get("/v1/files/pfp")]
+async fn get_pfp(handler: Data<PostgresHandler>, body: web::Query<SinglePFPSearch>, req: HttpRequest) -> Result<HttpResponse> {
+    let json_data = body.into_inner();
+    let file_path = handler.get_pfp_path(&json_data.id);
+    let file = actix_files::NamedFile::open_async(file_path).await;
+
+    match file {
+        Ok(file) => { return Ok(file.into_response(&req)); },
+        Err(_) => { return Ok(HttpResponse::Ok().json(ErrorResponse { error: "Not found".to_string() })) }
+    };
+}
+
 #[derive(Deserialize,Debug)]
 struct SingleFileSearch {
     id: Uuid

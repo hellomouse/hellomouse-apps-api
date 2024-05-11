@@ -9,7 +9,8 @@ use sqlx::Row;
 use sqlx::postgres::PgPool;
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
-
+use std::io::Read;
+extern crate sanitize_filename;
 #[derive(Clone, Serialize)]
 pub struct UserSearchResult {
     name: String,
@@ -94,6 +95,11 @@ impl PostgresHandler {
         Ok(file_path)
     }
 
+    pub fn get_pfp_path(&self, user_id: &String) -> String {
+        let user_id = sanitize_filename::sanitize(user_id);
+        return format!("{}/{}/{}.png", self.user_uploads_dir, user_id, user_id);
+    }
+
     pub async fn delete_file(&self, user_id: &String, id: &Uuid) -> Result<(), sqlx::Error> {
         let row = sqlx::query("SELECT user_id, file_extension FROM user_files WHERE id = $1 AND user_id = $2;")
             .bind(id).bind(user_id)
@@ -171,7 +177,10 @@ impl PostgresHandler {
             if let Some(filename) = field.content_disposition().get_filename() {
                 let path = Path::new(&filename);
                 file_name = path.file_stem().unwrap().to_string_lossy().to_string();
-                file_extension = path.extension().unwrap().to_string_lossy().to_string();
+                match path.extension() {
+                    Some(val) => { file_extension = val.to_string_lossy().to_string(); }
+                    None => {}
+                }
             }
 
             let mut tx = self.pool.begin().await?;
@@ -182,20 +191,14 @@ impl PostgresHandler {
                     Ok(chunk) => {
                         match async_file.write_all(&chunk).await {
                             Ok(_) => (),
-                            Err(_) => {
-                                errored_in_chunk = true;
-                                break;
-                            }
+                            Err(_) => { errored_in_chunk = true; break; }
                         }
                     },
-                    Err(_) => {
-                        errored_in_chunk = true;
-                        break;
-                    }
+                    Err(_) => { errored_in_chunk = true; break; }
                 };
             }
             if errored_in_chunk { file_cleanup_and_continue!(&current_path, async_file, failed_files, count, tx); } // Already processed cleanup
-            if file_name.is_empty() || file_extension.is_empty() { file_cleanup_and_continue!(&current_path, async_file, failed_files, count, tx); };
+            if file_name.is_empty() && file_extension.is_empty() { file_cleanup_and_continue!(&current_path, async_file, failed_files, count, tx); };
     
             // copy the file to the user's uploads directory with the new filename
             let file_id = Uuid::new_v4();
@@ -204,14 +207,14 @@ impl PostgresHandler {
                 .join(format!("{}.{}", file_id.to_string(), file_extension))
                 .to_str().unwrap().to_string();
 
-            if async_file.shutdown().await.is_err() { file_cleanup_and_continue!(&current_path, async_file, failed_files, count, tx); }
-
             let file_size: u64;
             let file_metadata = async_file.metadata().await;
             match file_metadata {
                 Ok(data) => { file_size = data.len(); },
                 Err(_) => { file_cleanup_and_continue!(&current_path, async_file, failed_files, count, tx); }
             };
+
+            if async_file.shutdown().await.is_err() { file_cleanup_and_continue!(&current_path, async_file, failed_files, count, tx); }
 
             let result = sqlx::query("INSERT INTO user_files (id, user_id, original_name, file_extension, upload_date, file_size) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING;")
                 .bind(&file_id)
@@ -231,6 +234,82 @@ impl PostgresHandler {
         }
 
         Ok(FileUploadResult { succeeded: succeeded_files, failed: failed_files })
+    }
+
+    // For uploading a profile picture
+    pub async fn pfp_create(&self, user_id: &str, mut payload: Multipart) -> Result<(), Box<dyn Error>> {
+        macro_rules! file_cleanup_and_continue {
+            ($current_path:expr, $async_file:expr) => {{
+                $async_file.shutdown().await.unwrap();
+                tokio::fs::remove_file($current_path).await.unwrap();
+                return Err("PFP fail".into());
+             }};
+        }
+
+        // Create subdirectory for user files
+        tokio::fs::create_dir_all(Path::new(&self.user_uploads_dir).join(user_id).to_str().unwrap().to_string()).await.unwrap();
+
+        if let Some(item) = payload.next().await {
+            let mut field = item?;
+            let mut current_path = Path::new(&self.user_uploads_dir_tmp).join(Uuid::new_v4().to_string())
+                .to_str().unwrap().to_string();
+            let mut async_file = tokio::fs::File::create(&current_path).await?;
+            let mut errored_in_chunk = false;
+
+            while let Some(chunk) = field.next().await {
+                match chunk {
+                    Ok(chunk) => {
+                        match async_file.write_all(&chunk).await {
+                            Ok(_) => (),
+                            Err(_) => { errored_in_chunk = true; break; }
+                        }},
+                    Err(_) => { errored_in_chunk = true; break; }
+                };
+            }
+            if errored_in_chunk { file_cleanup_and_continue!(&current_path, async_file); } // Already processed cleanup
+
+            // Validate if file is actually an image (from header)
+            let file = std::fs::File::open(&current_path);
+            if file.is_err() { file_cleanup_and_continue!(&current_path, async_file); }
+            let file = file.unwrap();
+
+            let mut content: Vec<u8> = vec![];
+            let actual_ext;
+            file.take(12).read_to_end(&mut content)?;
+
+            match imghdr::from_bytes(&content) {
+                Some(imghdr::Type::Jpeg) => { actual_ext = "jpg".to_string(); },
+                Some(imghdr::Type::Png) => { actual_ext = "png".to_string(); },
+                Some(imghdr::Type::Webp) => { actual_ext = "webp".to_string(); },
+                _ => { file_cleanup_and_continue!(&current_path, async_file); },
+            }
+
+            let new_current_path = current_path.to_string() + "." + actual_ext.as_str();
+            if tokio::fs::rename(&current_path, &new_current_path).await.is_err() {
+                file_cleanup_and_continue!(&current_path, async_file);
+            }
+            current_path = new_current_path;
+
+            // Crop the image, convert to png, and upload to user's upload directory
+            let file_id = user_id;
+            let file_extension = "png";
+            let file_path = Path::new(&self.user_uploads_dir)
+                .join(user_id)
+                .join(format!("{}.{}", file_id.to_string(), file_extension))
+                .to_str().unwrap().to_string();
+
+            let img = image::open(&current_path).unwrap();
+            if async_file.shutdown().await.is_err() { file_cleanup_and_continue!(&current_path, async_file); }
+            let img = img.resize_to_fill(200, 200, image::imageops::FilterType::Triangle);
+            img.save(&file_path).unwrap();
+
+            if tokio::fs::remove_file(&current_path).await.is_err() {
+                tokio::fs::remove_file(&file_path).await.unwrap();
+                file_cleanup_and_continue!(&current_path, async_file);
+            }
+        }
+
+        Ok(())
     }
 
 }

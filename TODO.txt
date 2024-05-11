@@ -16,9 +16,6 @@ https://crates.io/crates/actix-multipart-extract
 https://users.rust-lang.org/t/file-upload-in-actix-web/64871/3
 
 
-
-API for updating PFP
-
 https://datatracker.ietf.org/doc/html/rfc7617
 https://www.lpalmieri.com/posts/password-authentication-in-rust/
 https://libpasta.github.io/introduction/basic-usage/

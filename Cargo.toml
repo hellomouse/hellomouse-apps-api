@@ -45,6 +45,9 @@ actix-multipart = "0.6.1"
 sanitize_html = "0.7.0"
 regex = "1.9.4"
 actix-governor = "0.4.1"
+imghdr = "0.7.0"
+image = "0.25.1"
+sanitize-filename = "0.5.0"
 
 [profile.release]
 opt-level = 'z'     # Optimize for size
