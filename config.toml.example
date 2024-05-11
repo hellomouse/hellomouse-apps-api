@@ -24,6 +24,10 @@ request_quota = 10
 login_attempt_window = "10 minutes"
 login_attempt_max_per_window = 10
 
+# Where to store files
+user_uploads_dir = "/files"
+user_uploads_dir_tmp = "files/tmp"
+
 [count]
 min_password_length = 8
 max_password_length = 32

@@ -166,7 +166,7 @@ impl PostgresHandler {
 
         // Creator gets owner permission by default
         sqlx::query(r#"INSERT INTO board.board_perms(board_id, user_id, perm_id) VALUES($1, $2, $3);"#)
-            .bind(id).bind(creator_id.clone()).bind(PermLevel::Owner)
+            .bind(id).bind(creator_id).bind(PermLevel::Owner)
             .execute(&mut *tx).await?;
 
         for (perm_user_id, val) in perms {

@@ -2,6 +2,7 @@ note: json merge will keep old keys, maybe just overwrite and keep defaults?
 
 safe cors
 
+
 headers
 .wrap(middleware::DefaultHeaders::new().add(("X-Version", "0.2")))
     - https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html
@@ -15,8 +16,6 @@ make a file upload API
 https://crates.io/crates/actix-multipart-extract
 https://users.rust-lang.org/t/file-upload-in-actix-web/64871/3
 
-
-API for updating PFP
 
 https://datatracker.ietf.org/doc/html/rfc7617
 https://www.lpalmieri.com/posts/password-authentication-in-rust/

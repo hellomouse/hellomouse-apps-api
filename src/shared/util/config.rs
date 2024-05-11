@@ -35,6 +35,9 @@ pub struct ServerConfig {
     pub port: u16,
     pub log: bool,
     pub login_cookie_valid_duration_seconds: u64,
+
+    pub user_uploads_dir: String,
+    pub user_uploads_dir_tmp: String,
     pub request_quota_replenish_ms: u64,
     pub request_quota: u32,
     pub login_attempt_window: String,
@@ -72,12 +75,12 @@ pub fn get_config() -> Config {
         }
     };
 
-    let data: Config = match toml::from_str(&contents) {
+    let data: Result<Config, toml::de::Error> = toml::from_str(&contents);
+    match data {
         Ok(d) => d,
-        Err(_) => {
-            eprintln!("Unable to load data from config");
+        Err(e) => {
+            eprintln!("Unable to load data from config: {}", e);
             exit(1);
         }
-    };
-    return data;
+    }
 }

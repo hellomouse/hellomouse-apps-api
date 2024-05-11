@@ -1,0 +1,13 @@
+version: '3.4'
+services:
+  db:
+    image: postgres:14.1-alpine
+    environment:
+      - POSTGRES_DB=board
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=fuwafuwa
+    ports:
+      - "5432:5432"
+    security_opt:
+      - label=disable
+    restart: always

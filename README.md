@@ -11,8 +11,17 @@ First, rename `config.toml.example` to `config.toml` and fill in the arguments. 
 To run a debug build:
 
 ```
-cargo run
+cargo run --bin server
 ```
+
+### Adding new users:
+
+```
+cargo build --bin user --release
+./target/release/user help
+```
+
+Then run the user executable for a list of commands.
 
 ### Tests:
 

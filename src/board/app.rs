@@ -1,5 +1,5 @@
 use crate::board::handlers::postgres_handler::PostgresHandler;
-use crate::shared::types::app::{ErrorResponse, Response, login_fail, no_update_permission, no_view_permission};
+use crate::shared::types::app::{ErrorResponse, Response, login_fail, no_update_permission};
 use crate::shared::types::account::{Perm, PermLevel};
 use crate::board::types::board::{SortBoard, Board, MassBoardShareUser};
 use crate::board::types::pin::{PinFlags, Pin, SortPin, PinHistory, PinHistoryAbridged};

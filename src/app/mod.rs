@@ -1,9 +1,8 @@
 use actix_identity::IdentityMiddleware;
 use actix_session::{config::PersistentSession, storage::CookieSessionStore, SessionMiddleware};
 use actix_web::{
-    get, post, HttpResponse, web::{self, Data},
-    cookie::{time::Duration, SameSite},
-    http::StatusCode,
+    HttpResponse, web::{self, Data},
+    cookie::time::Duration,
     middleware, App, HttpServer, Result
 };
 use actix_cors::Cors;
@@ -20,12 +19,14 @@ use crate::board::handlers::postgres_handler::PostgresHandler as BoardPostgresHa
 use crate::link::handlers::postgres_handler::PostgresHandler as LinkPostgresHandler;
 use crate::music::handlers::postgres_handler::PostgresHandler as MusicPostgresHandler;
 use crate::site::handlers::web_handler::WebHandler as SiteWebHandler;
+use crate::files::postgres_handler::PostgresHandler as FilesPostgresHandler;
 
 use crate::shared::app as shared_app;
 use crate::board::app as board_app;
 use crate::site::app as site_app;
 use crate::link::app as link_app;
 use crate::music::app as music_app;
+use crate::files::app as files_app;
 
 use crate::shared::types::app as app_types;
 
@@ -56,6 +57,14 @@ fn routes(app: &mut web::ServiceConfig) {
         .service(board_app::bulk_get_board_perms)
         .service(board_app::bulk_update_board_perms)
         
+        // Files
+        .service(files_app::create_file)
+        .service(files_app::get_file)
+        .service(files_app::get_files)
+        .service(files_app::delete_file)
+        .service(files_app::create_pfp)
+        .service(files_app::get_pfp)
+
         // Pins
         .service(board_app::create_pin)
         .service(board_app::modify_pin)
@@ -108,7 +117,9 @@ fn routes(app: &mut web::ServiceConfig) {
 
 pub async fn start() -> std::io::Result<()> {
     if config::get_config().server.log {
-        std::env::set_var("RUST_LOG", "debug");
+        if cfg!(debug_assertions) {
+            std::env::set_var("RUST_LOG", "debug");
+        }
         env_logger::init();
     }
     
@@ -120,12 +131,14 @@ pub async fn start() -> std::io::Result<()> {
     let handler3 = SiteWebHandler::new().await.unwrap();
     let handler4 = LinkPostgresHandler::new().await.unwrap();
     let handler5 = MusicPostgresHandler::new().await.unwrap();
+    let handler6 = FilesPostgresHandler::new().await.unwrap();
 
     handler1.init().await.unwrap();
     handler2.init().await.unwrap();
     handler3.init().await.unwrap();
     handler4.init().await.unwrap();
     handler5.init().await.unwrap();
+    handler6.init().await.unwrap();
 
     println!("starting HTTP server at http://localhost:{}", config::get_config().server.port);
 
@@ -143,6 +156,7 @@ pub async fn start() -> std::io::Result<()> {
             .app_data(Data::new(handler3.clone()))
             .app_data(Data::new(handler4.clone()))
             .app_data(Data::new(handler5.clone()))
+            .app_data(Data::new(handler6.clone()))
             .configure(routes)
             .wrap(Governor::new(&governor_config))
             .wrap(IdentityMiddleware::default())
@@ -166,6 +180,6 @@ pub async fn start() -> std::io::Result<()> {
             .default_service(web::route().to(not_found))
     })
         .keep_alive(time::Duration::from_secs(30))
-        .bind(("127.0.0.1", config::get_config().server.port))?
+        .bind(("0.0.0.0", config::get_config().server.port))?
         .run().await
 }

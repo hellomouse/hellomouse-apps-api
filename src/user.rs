@@ -1,5 +1,5 @@
 use clap::{arg, Parser, Subcommand};
-use crate::shared::util::config;
+use hellomouse_board_server::shared::util::config;
 use hellomouse_board_server::shared::handlers::postgres_handler::PostgresHandler as SharedPostgresHandler;
 
 #[derive(Parser)]
@@ -41,7 +41,7 @@ fn validate_password(password: &str) -> Result<String, String> {
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
-    let mut postgres_handler = SharedPostgresHandler::new().await.unwrap();
+    let postgres_handler = SharedPostgresHandler::new().await.unwrap();
     match &cli.command {
         Commands::Add { name, id, password } => match postgres_handler.get_user(id).await {
             Ok(_) => println!(
@@ -59,7 +59,7 @@ async fn main() {
         },
         Commands::Password { id, password } => match postgres_handler.get_user(id).await {
             Ok(_) => match postgres_handler
-                .change_password(id, password.to_string())
+                .change_password(id, &password)
                 .await
             {
                 Ok(_) => println!("Successfully changed password"),
