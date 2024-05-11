@@ -117,7 +117,9 @@ fn routes(app: &mut web::ServiceConfig) {
 
 pub async fn start() -> std::io::Result<()> {
     if config::get_config().server.log {
-        std::env::set_var("RUST_LOG", "debug");
+        if cfg!(debug_assertions) {
+            std::env::set_var("RUST_LOG", "debug");
+        }
         env_logger::init();
     }
     
