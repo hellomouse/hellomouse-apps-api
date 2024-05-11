@@ -2,6 +2,7 @@ note: json merge will keep old keys, maybe just overwrite and keep defaults?
 
 safe cors
 
+
 headers
 .wrap(middleware::DefaultHeaders::new().add(("X-Version", "0.2")))
     - https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html

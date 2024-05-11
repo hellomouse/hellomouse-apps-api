@@ -180,6 +180,6 @@ pub async fn start() -> std::io::Result<()> {
             .default_service(web::route().to(not_found))
     })
         .keep_alive(time::Duration::from_secs(30))
-        .bind(("127.0.0.1", config::get_config().server.port))?
+        .bind(("0.0.0.0", config::get_config().server.port))?
         .run().await
 }
