@@ -151,6 +151,7 @@ pub async fn start() -> std::io::Result<()> {
 
     HttpServer::new(move || {
         App::new()
+            .app_data(web::JsonConfig::default().limit(1024 * 1024 * 1024)) // 1 GB content limit
             .app_data(Data::new(handler1.clone()))
             .app_data(Data::new(handler2.clone()))
             .app_data(Data::new(handler3.clone()))
