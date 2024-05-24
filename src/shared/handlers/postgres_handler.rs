@@ -36,6 +36,11 @@ impl PostgresHandler {
             settings json CHECK(pg_column_size(settings) < 1048576),
             password_hash text NOT NULL
         );"#).execute(&self.pool).await?;
+        sqlx::query(r#"
+        ALTER TABLE users 
+        ADD COLUMN IF NOT EXISTS keycloak_sub text CHECK(length(keycloak_sub) = 36);
+        "#).execute(&self.pool).await?;
+
 
         sqlx::query(r#"
         CREATE TABLE IF NOT EXISTS login_attempts (
@@ -47,7 +52,7 @@ impl PostgresHandler {
         );"#).execute(&self.pool).await?;
 
         // Create a dummy public user_id
-        match self.create_account("Public", "public", "this_password_doesnt_matter").await {
+        match self.create_account("Public", "public", "this_password_doesnt_matter", None).await {
             Ok(_) => (),
             Err(_) => ()
         };
@@ -97,10 +102,10 @@ impl PostgresHandler {
         Ok(success)
     }
 
-    pub async fn create_account(&self, user_id: &UserId, name: &str, password: &str) -> Result<(), sqlx::Error> {
+    pub async fn create_account(&self, user_id: &UserId, name: &str, password: &str, keycloak_sub: Option<&str>) -> Result<(), sqlx::Error> {
         let password_hash = libpasta::hash_password(&password);
-        sqlx::query("INSERT INTO users(id, name, password_hash) VALUES($1, $2, $3);")
-            .bind(user_id.to_lowercase()).bind(name).bind(password_hash)
+        sqlx::query("INSERT INTO users(id, name, password_hash, keycloak_sub) VALUES($1, $2, $3, $4);")
+            .bind(user_id.to_lowercase()).bind(name).bind(password_hash).bind(keycloak_sub)
             .execute(&self.pool).await?;
         Ok(())
     }
@@ -159,6 +164,20 @@ impl PostgresHandler {
     pub async fn get_user(&self, user_id: &UserId) -> Result<Account, sqlx::Error> {
         let user = sqlx::query("SELECT * FROM users WHERE id = $1;")
             .bind(user_id).fetch_one(&self.pool).await?;
+        let acc = Account{
+            name: user.get::<String, &str>("name"),
+            id: user.get::<String, &str>("id"),
+            pfp_url: user.try_get::<String, &str>("pfp_url").unwrap_or("".to_string()),
+            settings: user.try_get::<Value, &str>("settings").unwrap_or(
+                serde_json::from_str("{}").unwrap())
+        };
+        Ok(acc)
+    }
+
+    pub async fn get_user_by_keycloak_sub(&self, keycloak_sub: &str) -> Result<Account, sqlx::Error> {
+        let user = sqlx::query("SELECT * FROM users WHERE keycloak_sub = $1;")
+            .bind(keycloak_sub).fetch_one(&self.pool).await?;
+    
         let acc = Account{
             name: user.get::<String, &str>("name"),
             id: user.get::<String, &str>("id"),

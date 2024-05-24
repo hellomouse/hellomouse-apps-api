@@ -1,6 +1,7 @@
 # Secret config
 config.toml
 session-key
+.env
 
 # Misc
 .vscode/

@@ -1,3 +1,7 @@
+use std::env;
+use dotenv::dotenv;
+use reqwest::header::{HeaderMap, AUTHORIZATION, CONTENT_TYPE};
+
 use crate::shared::handlers::postgres_handler::{PostgresHandler, UserSearchResult};
 use crate::shared::types::app::{ErrorResponse, Response, login_fail};
 
@@ -7,9 +11,9 @@ use actix_web::{
     HttpMessage as _, HttpRequest, Result
 };
 
+use reqwest::Client;
 use serde::{Serialize, Deserialize};
 use serde_json::Value;
-
 
 #[derive(Deserialize)]
 struct LoginForm {
@@ -34,6 +38,61 @@ async fn login(handler: Data<PostgresHandler>, req: HttpRequest, info: web::Json
         .can_login(info.username.as_str(), info.password.as_str(), ip.as_str()).await.unwrap() { login_fail!() }
     Identity::login(&req.extensions(), info.username.as_str().to_owned()).unwrap();
     Ok(HttpResponse::Ok().json(Response { msg: "You logged in".to_string() }))
+}
+
+#[derive(Deserialize,Debug)]
+struct UserInfo {
+    sub: String,
+    email: String,
+    email_verified: bool,
+}
+
+#[derive(Deserialize)]
+struct AuthRequest {
+    code: String
+}
+
+#[post("/v1/auth/callback")]
+async fn auth_callback(data: web::Json<AuthRequest>, postgres_handler: Data<PostgresHandler>, req: HttpRequest) -> Result<HttpResponse> {
+    dotenv().ok();
+
+    let access_token = &data.code;
+
+    let mut headers = HeaderMap::new();
+    headers.insert(AUTHORIZATION, format!("Bearer {}", access_token).parse().unwrap());
+    headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
+
+    let keycloak_url = env::var("KEYCLOAK_URL")
+    .expect("KEYCLOAK_URL must be set");
+    let keycloak_realm = env::var("KEYCLOAK_REALM")
+    .expect("KEYCLOAK_REALM must be set");
+
+    let userinfo_url = format!("{}/auth/realms/{}/protocol/openid-connect/userinfo", keycloak_url, keycloak_realm);
+
+    let client = Client::new();
+    let response = client
+        .get(userinfo_url)
+        .header(AUTHORIZATION, format!("Bearer {}", access_token))
+        .header(CONTENT_TYPE, "application/json")
+        .send()
+        .await
+        .unwrap();
+
+    if response.status().is_success() {
+        let user_info: UserInfo = response.json().await.unwrap();
+        println!("User info: {:?}", user_info);
+        match postgres_handler.get_user_by_keycloak_sub(&user_info.sub).await {
+            Ok(account) => {
+                Identity::login(&req.extensions(), account.id.clone()).unwrap();
+                return Ok(HttpResponse::Ok().json(Response { msg: "You logged in".to_string()}));},
+            Err(_) => {
+                // TODO: redirect user to register form
+            },
+        };
+
+    }
+
+    Ok(HttpResponse::Unauthorized().body("Failed to fetch user info"))
 }
 
 #[post("/v1/logout")]
@@ -106,6 +165,22 @@ async fn users(handler: Data<PostgresHandler>, identity: Option<Identity>, param
         };
     }
     login_fail!();
+}
+
+#[derive(Deserialize)]
+pub struct KeycloakSubParams {
+    pub sub: String,
+}
+#[get("/v1/users/keycloak")]
+async fn users_by_keycloak_sub(handler: Data<PostgresHandler>, params: web::Query<KeycloakSubParams>) -> Result<HttpResponse> {
+    return match handler.get_user_by_keycloak_sub(params.sub.as_str()).await {
+        Ok(user) => Ok(HttpResponse::Ok().json(UserParamsReturn {
+            name: user.name,
+            id: user.id,
+            pfp_url: user.pfp_url
+        })),
+        Err(_err) => Ok(HttpResponse::Forbidden().json(ErrorResponse{ error: "Could not get user".to_string() }))
+    };
 }
 
 #[derive(Deserialize)]

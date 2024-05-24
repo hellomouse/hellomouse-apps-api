@@ -40,9 +40,11 @@ fn routes(app: &mut web::ServiceConfig) {
     app
         // User handling
         .service(shared_app::login)
+        .service(shared_app::auth_callback)
         .service(shared_app::logout)
         .service(shared_app::user_settings)
         .service(shared_app::users)
+        .service(shared_app::users_by_keycloak_sub)
         .service(shared_app::users_batch)
         .service(shared_app::users_search)
         .service(shared_app::get_user_settings)
