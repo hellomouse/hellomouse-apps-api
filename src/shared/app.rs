@@ -56,6 +56,7 @@ struct AuthRequest {
 async fn auth_callback(data: web::Json<AuthRequest>, postgres_handler: Data<PostgresHandler>, req: HttpRequest) -> Result<HttpResponse> {
     dotenv().ok();
 
+    // TODO: Validate audience from bearer token matches client_id
     let access_token = &data.code;
 
     let mut headers = HeaderMap::new();
@@ -67,6 +68,7 @@ async fn auth_callback(data: web::Json<AuthRequest>, postgres_handler: Data<Post
     let keycloak_realm = env::var("KEYCLOAK_REALM")
     .expect("KEYCLOAK_REALM must be set");
 
+    // TODO: use keycloak discovery endpoint
     let userinfo_url = format!("{}/auth/realms/{}/protocol/openid-connect/userinfo", keycloak_url, keycloak_realm);
 
     let client = Client::new();
