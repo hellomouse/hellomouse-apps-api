@@ -88,7 +88,7 @@ async fn auth_callback(data: web::Json<AuthRequest>, postgres_handler: Data<Post
                 Identity::login(&req.extensions(), account.id.clone()).unwrap();
                 return Ok(HttpResponse::Ok().json(Response { msg: "You logged in".to_string()}));},
             Err(_) => {
-                // TODO: redirect user to register form
+                return Ok(HttpResponse::Ok().json(Response { msg: "register".to_string()}));
             },
         };
 
